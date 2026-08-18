@@ -2,3 +2,28 @@ packages:
   - 'apps/*'
   - 'modules/*'
   - 'packages/*'
+
+# Dependency window (DEP-001). Versions live here, once, so a package can declare
+# "react": "catalog:" without choosing a version — and without introducing a new
+# resolution into the lockfile. Adding or bumping an entry here is Claude's call;
+# referencing one is anybody's.
+catalog:
+  'react': ^19.2.8
+  'react-dom': ^19.2.8
+  '@types/react': ^19.2.18
+  '@types/react-dom': ^19.2.4
+  'vite': ^8.2.1
+  '@vitejs/plugin-react': ^6.0.5
+  'vitest': ^4.1.11
+  'jsdom': ^30.0.1
+  '@testing-library/react': ^16.3.2
+  '@testing-library/user-event': ^14.6.5
+  '@testing-library/jest-dom': ^7.0.1
+  'storybook': ^10.5.9
+  '@storybook/react-vite': ^10.5.9
+  'typescript': ^5.6.3
+
+# pnpm 10 blocks postinstall scripts by default. esbuild needs its own to place the
+# platform binary, and vite/vitest/storybook are unusable without it.
+onlyBuiltDependencies:
+  - esbuild

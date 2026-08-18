@@ -81,7 +81,16 @@ each agent reviews the other's PRs. Anything touching `packages/tenancy`,
 `packages/policy`, `modules/children-checkin`, `modules/giving`, or `infra/` needs
 Claude's approval regardless of author.
 
-Rebase on `main` before every push. Only Claude updates `pnpm-lock.yaml`; request
+Rebase on `main` before every push.
+
+**Dependencies.** Never introduce a new external dependency *version*. Versions live in the
+`catalog:` block of `pnpm-workspace.yaml`; declare `"react": "catalog:"` in your package and
+pnpm resolves it to the already-locked version. Need something not in the catalog? Stop and
+open a `needs-owner:claude` issue — adding a catalog entry is Claude's call.
+
+The `pnpm-lock.yaml` diff produced by adding your own workspace package (a new importer
+entry, no new resolutions) is expected and must be committed. What is forbidden is a
+lockfile diff that adds packages or changes versions. Request
 dependencies in the sprint issue and they land in one batched PR.
 
 ## 6. Verify before you push
