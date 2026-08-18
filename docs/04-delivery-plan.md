@@ -18,7 +18,9 @@ Legend: **C** Claude · **X** Codex · ⛓ blocks the other agent · 🔒 securi
 | INF-004 | Docker Compose dev env (Postgres, Redis, LocalStack/MinIO) | **X** |
 | INF-005 | Terraform skeleton: VPC, RDS, ElastiCache, S3, ECS/Fargate, secrets | **C** 🔒 |
 | INF-006 | `packages/testing` harness: containerised Postgres, factories, RLS test helpers | **C** |
-| INF-007 | `packages/ui` design-system bootstrap (tokens, primitives, Storybook) | **X** |
+| DEP-001 ⛓ | Dependency window: React, Storybook, component test stack into the lockfile | **C** |
+| INF-007a | `packages/ui-tokens` — shared design tokens, zero dependencies, web + native | **X** |
+| INF-007b | `packages/ui` — React web components on those tokens (needs DEP-001) | **X** |
 | DOC-001 | ADR template + `docs/adr/0001-modular-monolith.md`, `0002-optional-modules.md` | **C** |
 
 **Sync point:** INF-001/002 must merge before Codex opens any app PR.

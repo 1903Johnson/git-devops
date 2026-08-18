@@ -75,41 +75,114 @@ Definition of done
 
 ---
 
-## INF-007 — Design system bootstrap
+## DEP-001 — Dependency window for the UI stack (Claude, prerequisite)
 
-*Sprint 0 · Codex · depends on INF-001 (merged) · no file overlap with INF-004, so both can run at once*
+*Sprint 0 · Claude · blocks INF-007b*
+
+Codex cannot add dependencies — `pnpm-lock.yaml` is Claude-owned (docs/03 §5), so the
+dependency batch lands first, in one PR: `react`, `react-dom`, their types, the Storybook
+React renderer, and the component test stack. Until it merges, Codex can only build
+zero-dependency packages.
+
+This constraint is why the first INF-007 attempt produced custom elements: with no React in
+the workspace and no way to add it, zero-dependency custom elements were the only thing
+buildable. The rule worked — it batched the request instead of letting the lockfile churn —
+but the ticket had to be sequenced around it, and was not. Hence the split below.
+
+---
+
+## INF-007a — Design tokens (`@church/ui-tokens`)
+
+*Sprint 0 · Codex · depends on INF-001 (merged) · **startable now**, needs no dependencies*
 
 ```text
-TICKET: INF-007 — Design system bootstrap (packages/ui)
+TICKET: INF-007a — Design tokens (@church/ui-tokens)
 
 Goal
-A shared component package that admin-web and member-mobile both consume, so the two
-clients cannot drift apart visually. Bootstrap only — breadth of components comes later.
+One set of design values consumed by every client on every platform. Tokens are the ONLY
+layer that can be genuinely shared between the Next.js admin app and the React Native
+member app — see "Why two packages" below. Get this layer right and the clients cannot
+drift apart visually, whatever renders them.
 
 Files you own
-  packages/ui/**        (new workspace package: @church/ui)
+  packages/ui-tokens/**      (new workspace package: @church/ui-tokens)
 
 Scope
-- Design tokens first: colour, spacing, typography, radius, elevation as typed exports.
-  Components consume tokens; they never hardcode values.
-- A small primitive set proving the token layer works: Button, Input, Select, Card, Badge,
-  Spinner, EmptyState. No church-domain components (no MemberCard, no GivingSummary) —
-  those belong to feature tickets.
-- Storybook with a story per primitive, covering the accessibility-relevant states:
-  disabled, error, loading, focus-visible.
-- Unit tests for anything with behaviour (Button loading/disabled, Input error state).
-- Must build standalone: `pnpm --filter @church/ui build`, with a typed entry point.
-- Add `lint`, `typecheck`, `test:unit`, and `build` scripts to the package so the root
-  `pnpm run verify` picks them up.
+- Typed exports for: colour, spacing, typography, radius, elevation, motion durations.
+- Colour must carry semantic names (surface, surfaceMuted, textPrimary, textMuted, border,
+  danger, warning, success, accent), not raw palette names, and must define light and dark
+  values for each. Church volunteers use these on kiosks in dim rooms; dark mode is not a
+  nice-to-have here.
+- A web adapter that emits the tokens as CSS custom properties, and a plain object export
+  that React Native can consume directly.
+- ZERO runtime dependencies. No React, no DOM, no browser globals at module scope — this
+  package must import cleanly inside a React Native bundle. This is a hard constraint, not
+  a preference: touching `document` or `window` anywhere in it breaks the mobile client.
+- Scripts: build, lint, typecheck, test:unit. Unit-test the CSS emitter and the light/dark
+  pairing (every semantic colour defined in both themes).
+
+Definition of done
+- `pnpm --filter @church/ui-tokens build` produces a typed entry point.
+- `pnpm run verify` passes from the repo root.
+- `grep -r "document\.\|window\." packages/ui-tokens/src` returns nothing.
+```
+
+---
+
+## INF-007b — Web component library (`@church/ui`)
+
+*Sprint 0 · Codex · depends on INF-007a **and** DEP-001 — do not start before both merge*
+
+```text
+TICKET: INF-007b — Web component library (@church/ui)
+
+Goal
+React components for the admin web app, built on @church/ui-tokens. Bootstrap only —
+breadth of components comes with the feature tickets that need them.
+
+Files you own
+  packages/ui/**             (new workspace package: @church/ui)
+
+Scope
+- REACT function components. Not custom elements, not web components: they must compose
+  with Next.js SSR, accept typed props, forward refs, and take standard React event
+  handlers. A previous attempt at this ticket used custom elements; that is the one
+  approach explicitly ruled out.
+- Primitives: Button, Input, Select, Card, Badge, Spinner, EmptyState. No church-domain
+  components (no MemberCard, no GivingSummary) — those belong to feature tickets.
+- Every visual value comes from @church/ui-tokens. A hardcoded colour or spacing value in
+  this package is a bug; the whole point of INF-007a is that this layer has no opinions of
+  its own about them.
+- Storybook (React renderer) with a story per primitive covering the accessibility-relevant
+  states: disabled, error, loading, focus-visible.
+- Unit tests for anything with behaviour: Button loading/disabled, Input error state and
+  its aria wiring, Select keyboard navigation.
+- Scripts: build, lint, typecheck, test:unit.
 
 Constraints
-- packages/ui is a leaf: no dependency on any app, module, or backend package.
-- Every interactive primitive is keyboard-navigable with a visible focus state. This ships
-  to church volunteers on shared kiosks, not to power users.
+- Depends on @church/ui-tokens ONLY. No app, module, or backend package — packages/ui is a
+  leaf, and the boundary check enforces it.
+- Every interactive primitive is keyboard-navigable with a visible focus state, and every
+  interactive target is at least 44x44px. This ships to volunteers on shared touch kiosks,
+  not to power users on laptops.
+- Do NOT add dependencies. DEP-001 has already put React, Storybook, and the test stack in
+  the lockfile. If you need something beyond that, stop and open a needs-owner:claude issue.
 
 Definition of done
 - Storybook runs; every primitive has a story; `pnpm run verify` passes from the repo root.
 ```
+
+### Why two packages
+
+React Native cannot render DOM. Any component built for the browser — React DOM or custom
+elements alike — is unusable in `member-mobile`, so "one component library for both
+clients" is not achievable and pretending otherwise just defers the discovery. What IS
+shareable is the token layer, which is plain data.
+
+So: **tokens are shared, components are per-platform.** `@church/ui-tokens` serves
+everything; `@church/ui` serves the web; `@church/ui-native` follows when `member-mobile`
+starts, against the same tokens. The design system lives in the tokens, not in the
+components.
 
 ---
 
