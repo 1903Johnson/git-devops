@@ -1,0 +1,38 @@
+# Ownership zones for the two-agent workflow (see docs/03-repo-and-workflow.md).
+# Replace the placeholder handles with the real GitHub accounts/teams driving each agent.
+#
+#   @claude-agent : Claude — risk, ambiguity, security, contracts, infra
+#   @codex-agent  : Codex  — well-specified throughput: CRUD modules, UI, fixtures
+
+* @claude-agent
+
+# ---- Claude: foundation, security, contracts, infra -------------------------
+/packages/contracts/            @claude-agent
+/packages/tenancy/              @claude-agent
+/packages/policy/               @claude-agent
+/packages/module-kit/           @claude-agent
+/packages/testing/              @claude-agent
+/infra/                         @claude-agent
+/.github/                       @claude-agent
+/docs/adr/                      @claude-agent
+
+# ---- Claude: money, confidentiality, child safety ---------------------------
+/modules/giving/                @claude-agent
+/modules/pastoral-care/         @claude-agent
+/modules/children-checkin/      @claude-agent
+
+# ---- Codex: throughput zones ------------------------------------------------
+/packages/ui/                   @codex-agent
+/apps/admin-web/                @codex-agent
+/apps/member-mobile/            @codex-agent
+/apps/kiosk/                    @codex-agent
+/modules/prayer-wall/           @codex-agent
+/modules/volunteer-scheduling/  @codex-agent
+/modules/facilities/            @codex-agent
+/modules/media-library/         @codex-agent
+
+# ---- Codex zones inside Claude-owned modules --------------------------------
+# UI and device-side work for children-checkin is Codex's, but still needs
+# Claude's review because of the data class involved.
+/modules/children-checkin/kiosk-ui/   @codex-agent @claude-agent
+/modules/giving/ui/                   @codex-agent @claude-agent
