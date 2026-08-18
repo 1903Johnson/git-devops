@@ -18,9 +18,15 @@ where a church has deliberately opted in; and every access to restricted data is
 
 ## 2. Who owns what
 
+**This table is the single source of truth for ownership zones.** `.github/CODEOWNERS`
+encodes it for GitHub's review routing and `docs/03-repo-and-workflow.md` §2 explains the
+reasoning behind it — but when they disagree with this table, this table is right and the
+other two are stale. Change ownership here first.
+
 | Zone | Owner |
 |---|---|
 | `packages/contracts`, `packages/tenancy`, `packages/policy`, `packages/module-kit` | Claude |
+| `packages/testing` | Claude |
 | `apps/api` core: identity, church, audit, billing | Claude |
 | `apps/api` core: people, groups, events, attendance | Codex |
 | `modules/giving`, `modules/pastoral-care` | Claude |

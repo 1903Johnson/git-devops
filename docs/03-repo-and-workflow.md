@@ -40,29 +40,31 @@ never conflict; two agents editing one file always do.
 
 ## 2. Ownership model
 
-| Zone | Primary owner | Notes |
-|---|---|---|
-| `packages/contracts` | **Claude** | Codex may propose changes via issue, not direct edit |
-| `packages/tenancy`, `packages/policy`, `packages/module-kit` | **Claude** | Security-critical foundation |
-| `apps/api` core modules — identity, church, audit, billing | **Claude** | |
-| `apps/api` core modules — people, groups, events, attendance | **Codex** | Against frozen contracts |
-| `modules/giving`, `modules/pastoral-care` | **Claude** | Money + confidential records |
-| `modules/children-checkin` — domain, policy, sync, purge | **Claude** | Safety-critical core |
-| `modules/children-checkin` — kiosk UI, roster cache, labels | **Codex** | Behind Claude's interfaces |
-| `modules/prayer-wall`, `volunteer-scheduling`, `facilities`, `media-library` | **Codex** | |
-| `apps/admin-web`, `apps/member-mobile` | **Codex** | Claude owns auth/session/crypto paths |
-| `packages/ui` | **Codex** | |
-| `infra/`, `.github/workflows` | **Claude** | |
-| `docs/` | **Claude** writes ADRs; **Codex** writes module READMEs | |
+**The ownership table lives in [`AGENTS.md`](../AGENTS.md) §2 and only there.** Both agents
+read that file at the start of every session, so it is the copy that has to be right. This
+section explains *why* the split falls where it does; `.github/CODEOWNERS` encodes the same
+map as literal paths because GitHub cannot read a table.
+
+Three copies of one map is two copies too many — it drifted within days of being written,
+which is what prompted this consolidation. If you change who owns what, change `AGENTS.md`
+§2 and update `CODEOWNERS` to match.
 
 The split is by *risk and ambiguity*, not by volume. Claude takes the work where a wrong
 decision is expensive and the spec is incomplete — tenancy, authz, payments, child safety,
-purge, infra. Codex takes the work where the spec can be made complete up front and the
-value is in throughput — CRUD modules, screens, components, test scaffolding. Codex is
-faster per well-specified ticket; Claude is better where the ticket has to be designed
-before it can be written. Play to that.
+purge, infra, CI, and anything that defines a contract others build against. Codex takes
+the work where the spec can be made complete up front and the value is in throughput —
+CRUD modules, screens, components, test scaffolding. Codex is faster per well-specified
+ticket; Claude is better where the ticket has to be designed before it can be written. Play
+to that.
 
-`.github/CODEOWNERS` encodes this so GitHub enforces review routing automatically.
+Two consequences worth stating explicitly:
+
+- **Security-critical paths need Claude's approval regardless of author.** That covers
+  `packages/tenancy`, `packages/policy`, `modules/children-checkin`, `modules/giving`, and
+  `infra/`.
+- **Codex owning the UI inside a Claude-owned module is deliberate**, not an exception to
+  patch. Kiosk screens for children's check-in are throughput work; the custody logic
+  behind them is not. The boundary runs between them, not around the module.
 
 ## 3. Contract-first protocol
 
