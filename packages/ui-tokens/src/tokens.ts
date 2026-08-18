@@ -1,9 +1,9 @@
-﻿export const lightColors = {
+export const lightColors = {
   surface: '#ffffff',
   surfaceMuted: '#f3f6f4',
   textPrimary: '#18201c',
   textMuted: '#56625c',
-  border: '#a6b0ab',
+  border: '#7c8781',
   danger: '#b42318',
   warning: '#9a6700',
   success: '#287a4b',
@@ -15,7 +15,7 @@ export const darkColors = {
   surfaceMuted: '#202a25',
   textPrimary: '#f3f6f4',
   textMuted: '#b8c2bd',
-  border: '#65716b',
+  border: '#717d77',
   danger: '#ff8a80',
   warning: '#f5c451',
   success: '#70d99b',
