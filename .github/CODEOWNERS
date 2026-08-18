@@ -22,6 +22,7 @@
 /packages/module-kit/           @1903Johnson
 /packages/testing/              @1903Johnson
 /packages/migrations/           @1903Johnson
+/packages/identity/             @1903Johnson
 /infra/                         @1903Johnson
 /.github/                       @1903Johnson
 /scripts/                       @1903Johnson
