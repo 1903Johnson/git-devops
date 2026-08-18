@@ -84,6 +84,33 @@ describe('app_user isolation', () => {
   });
 });
 
+describe('refresh_token isolation', () => {
+  it('passes the standard tenant-isolation battery', async () => {
+    await withRollback(async (client: PoolClient) => {
+      await assertTenantIsolation(client, {
+        table: 'refresh_token',
+        insert: async (c, churchId) => {
+          await c.query(
+            `INSERT INTO church (id, name, country) VALUES ($1, 'identity-iso-rt', 'US')`,
+            [churchId],
+          );
+          const user = await c.query<{ id: string }>(
+            `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+            [churchId, `rt-${Math.random().toString(36).slice(2)}@example.org`],
+          );
+          const { rows } = await c.query<{ id: string }>(
+            `INSERT INTO refresh_token (church_id, user_id, family_id, token_hash, expires_at)
+             VALUES ($1, $2, gen_random_uuid(), $3, now() + interval '30 days') RETURNING id`,
+            [churchId, user.rows[0]!.id, `hash-${Math.random().toString(36).slice(2)}`],
+          );
+          if (!rows[0]) throw new Error('insert returned no row');
+          return rows[0].id;
+        },
+      });
+    });
+  });
+});
+
 describe('authentication crosses tenants by design', () => {
   it('finds a user by email with no tenant context, and only through the audited path', async () => {
     const service = new IdentityService({

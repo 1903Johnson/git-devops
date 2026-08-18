@@ -8,13 +8,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:unit": "vitest run test/password.test.ts test/policy.test.ts test/lockout.test.ts test/breach.test.ts",
-    "test:integration": "vitest run test/service.integration.test.ts",
+    "test:unit": "vitest run test/password.test.ts test/policy.test.ts test/lockout.test.ts test/breach.test.ts test/jwt.test.ts test/refresh.test.ts",
+    "test:integration": "vitest run test/service.integration.test.ts test/session.integration.test.ts",
     "test:isolation": "vitest run test/isolation.test.ts"
   },
   "dependencies": {
     "@church/tenancy": "workspace:*",
-    "pg": "catalog:"
+    "pg": "catalog:",
+    "jose": "catalog:"
   },
   "devDependencies": {
     "@church/testing": "workspace:*",
