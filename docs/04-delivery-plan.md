@@ -15,7 +15,7 @@ Legend: **C** Claude · **X** Codex · ⛓ blocks the other agent · 🔒 securi
 | INF-001 ⛓ | Monorepo scaffold (pnpm workspaces, TS config, ESLint, Prettier, commit hooks) | **C** |
 | INF-002 ⛓ | CI pipeline skeleton: lint → typecheck → test → build | **C** |
 | INF-003 | Boundary-check ESLint rule + CI job (core ⇸ modules) | **C** |
-| INF-004 | Docker Compose dev env (Postgres, Redis, LocalStack/MinIO) | **X** |
+| INF-004 | Docker Compose dev env (Postgres, Redis, MinIO, Mailpit) | **C** (reassigned: needs a Docker host, which Codex's sandbox lacks) |
 | INF-005 | Terraform skeleton: VPC, RDS, ElastiCache, S3, ECS/Fargate, secrets | **C** 🔒 |
 | INF-006 | `packages/testing` harness: containerised Postgres, factories, RLS test helpers | **C** |
 | DEP-001 ⛓ | Dependency window: React, Storybook, component test stack into the lockfile | **C** |
