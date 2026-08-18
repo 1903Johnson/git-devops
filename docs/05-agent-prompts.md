@@ -23,7 +23,11 @@ Non-negotiable:
 - Work ONLY inside "Files you own" below. Need a change outside it? Do not make it —
   open a GitHub issue titled "needs-owner:claude — <what>" and finish the rest of the ticket.
 - Never edit: packages/contracts/**, packages/tenancy/**, packages/policy/**,
-  packages/module-kit/**, infra/**, .github/**, scripts/**, docs/adr/**, pnpm-lock.yaml.
+  packages/module-kit/**, infra/**, .github/**, scripts/**, docs/adr/**, and the
+  `catalog:` block of pnpm-workspace.yaml.
+- Dependencies: reference catalog versions ("react": "catalog:"). Never add a dependency
+  that is not already in the catalog — open a needs-owner:claude issue instead. Committing
+  the lockfile diff caused by adding your OWN workspace package is expected and correct.
 - Core (apps/api, apps/worker, packages/*) must never import from modules/*.
 - Branch codex/<TICKET>-<slug>; commit "<TICKET>: <imperative summary>"; ONE pull request
   against main with .github/pull_request_template.md filled in; under ~400 changed lines.

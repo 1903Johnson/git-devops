@@ -112,7 +112,7 @@ Rules:
 | Hazard | Rule |
 |---|---|
 | Migration filename collisions | Migrations are timestamp-prefixed and live in the owning package/module. Two agents never write into the same migrations dir in the same sprint. |
-| Lockfile churn | Only Claude updates the root lockfile. Codex requests dependencies in the sprint issue; they land in one batched PR at sprint start. |
+| Lockfile churn | Dependency **versions** live in the `catalog:` block of `pnpm-workspace.yaml`, which only Claude edits; packages reference them as `"react": "catalog:"`. A lockfile diff that only adds an importer for your own new package is expected and should be committed; a diff that adds packages or changes versions is not. Codex requests new dependencies in the sprint issue and they land in one batched PR. |
 | Central registration files | There are none by design — the module registry discovers manifests by convention. If a file starts accumulating one line per feature, that is a bug in the architecture, not a merge problem to manage. |
 | Generated code | `packages/sdk` is generated, never hand-edited, and regenerated in CI. Conflicts there are resolved by regenerating, never by hand-merging. |
 | Shared test fixtures | `packages/testing` is Claude-owned; Codex adds module-local fixtures inside its own module. |
