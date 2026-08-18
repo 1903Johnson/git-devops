@@ -1,0 +1,102 @@
+.church-button,
+.church-input,
+.church-select {
+  min-height: calc(var(--church-spacing-xxl) + var(--church-spacing-md));
+  min-width: calc(var(--church-spacing-xxl) + var(--church-spacing-md));
+  border: var(--church-spacing-xs) solid var(--church-color-border);
+  border-radius: var(--church-radius-md);
+  padding: var(--church-spacing-sm) var(--church-spacing-md);
+  background: var(--church-color-surface);
+  color: var(--church-color-text-primary);
+  font: inherit;
+}
+
+.church-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--church-spacing-sm);
+  background: var(--church-color-accent);
+  color: var(--church-color-surface);
+  cursor: pointer;
+}
+
+.church-button:disabled {
+  cursor: not-allowed;
+}
+
+.church-button:focus-visible,
+.church-input:focus-visible,
+.church-select:focus-visible {
+  outline: var(--church-spacing-xs) solid var(--church-color-accent);
+  outline-offset: var(--church-spacing-xs);
+}
+
+.church-field {
+  display: grid;
+  gap: var(--church-spacing-xs);
+}
+
+.church-error {
+  color: var(--church-color-danger);
+}
+
+.church-card {
+  padding: var(--church-spacing-lg);
+  border: var(--church-spacing-xs) solid var(--church-color-border);
+  border-radius: var(--church-radius-lg);
+  background: var(--church-color-surface);
+  color: var(--church-color-text-primary);
+  box-shadow: var(--church-elevation-low);
+}
+
+.church-badge {
+  display: inline-flex;
+  padding: var(--church-spacing-xs) var(--church-spacing-sm);
+  border-radius: var(--church-radius-pill);
+  background: var(--church-color-surface-muted);
+  color: var(--church-color-text-primary);
+}
+
+.church-spinner {
+  display: inline-flex;
+  align-items: center;
+}
+
+.church-spinner__mark {
+  width: var(--church-spacing-lg);
+  height: var(--church-spacing-lg);
+  border: var(--church-spacing-xs) solid var(--church-color-border);
+  border-top-color: var(--church-color-accent);
+  border-radius: var(--church-radius-pill);
+  animation: church-spin var(--church-motion-slow) linear infinite;
+}
+
+.church-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--church-spacing-md);
+  padding: var(--church-spacing-xxl);
+  text-align: center;
+  color: var(--church-color-text-primary);
+}
+
+.church-visually-hidden {
+  position: absolute;
+  width: var(--church-spacing-none);
+  height: var(--church-spacing-none);
+  overflow: hidden;
+  clip-path: inset(var(--church-radius-pill));
+}
+
+@keyframes church-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .church-spinner__mark {
+    animation-duration: var(--church-motion-instant);
+  }
+}
