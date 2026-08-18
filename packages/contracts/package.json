@@ -1,0 +1,20 @@
+{
+  "name": "@church/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi.yaml": "./openapi/openapi.yaml"
+  },
+  "scripts": {
+    "generate": "openapi-typescript openapi/openapi.yaml -o src/generated/schema.ts",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run"
+  },
+  "devDependencies": {
+    "openapi-typescript": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
