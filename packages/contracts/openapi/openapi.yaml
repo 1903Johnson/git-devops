@@ -1,0 +1,307 @@
+openapi: 3.1.0
+
+info:
+  title: Church Management Platform API
+  version: 0.1.0
+  description: |
+    The contract between the platform's backend and every client. This file is the
+    handoff artifact of the two-agent workflow (docs/03 §3): Claude changes it, both
+    agents build against the types generated from it, and neither waits for the other.
+
+    Editing the generated TypeScript instead of this file is always wrong — CI regenerates
+    and fails on any difference.
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Churches
+  - name: Campuses
+
+paths:
+  /churches/{churchId}:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+    get:
+      operationId: getChurch
+      tags: [Churches]
+      summary: Fetch a church
+      responses:
+        '200':
+          description: The church
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Church' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateChurch
+      tags: [Churches]
+      summary: Update a church
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChurchUpdate' }
+      responses:
+        '200':
+          description: The updated church
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Church' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /churches/{churchId}/campuses:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+    get:
+      operationId: listCampuses
+      tags: [Campuses]
+      summary: List a church's campuses
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of campuses
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Campus' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createCampus
+      tags: [Campuses]
+      summary: Create a campus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CampusCreate' }
+      responses:
+        '201':
+          description: The created campus
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /campuses/{campusId}:
+    parameters:
+      - $ref: '#/components/parameters/CampusId'
+    get:
+      operationId: getCampus
+      tags: [Campuses]
+      summary: Fetch a campus
+      responses:
+        '200':
+          description: The campus
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateCampus
+      tags: [Campuses]
+      summary: Update a campus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CampusUpdate' }
+      responses:
+        '200':
+          description: The updated campus
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteCampus
+      tags: [Campuses]
+      summary: Delete a campus
+      responses:
+        '204':
+          description: Deleted
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ChurchId:
+      name: churchId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CampusId:
+      name: campusId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from a previous response's `page.nextCursor`.
+      schema: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Stable, machine-readable identifier. Clients branch on this, never on `message`.
+            `MODULE_NOT_ENABLED` is returned as 404 rather than 403 on purpose: a 403 would
+            tell a caller that a module exists for a tenant that has not enabled it
+            (docs/01 §3).
+          enum:
+            - BAD_REQUEST
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - NOT_FOUND
+            - MODULE_NOT_ENABLED
+            - CONFLICT
+            - RATE_LIMITED
+            - INTERNAL
+        message:
+          type: string
+          description: Human-readable summary. Never parsed by clients, never shown raw to members.
+        details:
+          type: array
+          description: Field-level problems, for form display.
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+        requestId:
+          type: string
+          description: Correlates with server logs and the audit trail.
+
+    PageInfo:
+      type: object
+      required: [hasMore]
+      properties:
+        hasMore: { type: boolean }
+        nextCursor:
+          type: string
+          description: Present when `hasMore` is true.
+
+    Church:
+      type: object
+      required: [id, name, country, timezone, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2. Drives tax-receipt templates and payment provider.
+          minLength: 2
+          maxLength: 2
+        timezone: { type: string, description: IANA timezone, e.g. America/Chicago }
+        status:
+          type: string
+          enum: [trialing, active, suspended, cancelled]
+        createdAt: { type: string, format: date-time }
+
+    ChurchUpdate:
+      type: object
+      description: |
+        `id` and `status` are absent by design. Identity is immutable, and status is owned
+        by Billing — a church cannot lift its own suspension through this endpoint.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        country: { type: string, minLength: 2, maxLength: 2 }
+        timezone: { type: string }
+
+    Campus:
+      type: object
+      required: [id, churchId, name, isPrimary, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        churchId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        timezone:
+          type: string
+          description: Falls back to the church's timezone when absent.
+        isPrimary: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    CampusCreate:
+      type: object
+      required: [name]
+      description: |
+        `churchId` is absent on purpose: it comes from the authenticated tenant context, so
+        a client cannot create a campus inside another church by naming one.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        timezone: { type: string }
+        isPrimary: { type: boolean, default: false }
+
+    CampusUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        timezone: { type: string }
+        isPrimary: { type: boolean }
+
+  responses:
+    BadRequest:
+      description: The request was malformed or failed validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: No valid credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated, but not permitted
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: |
+        No such resource — or a module that is not enabled for this tenant, which is
+        deliberately indistinguishable from absence.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

@@ -7,3 +7,7 @@ coverage
 # produces large diffs in the docs both agents read and edit. Content review catches
 # formatting problems there; a formatter does not need to.
 *.md
+
+# Generated from openapi/openapi.yaml — Prettier would reformat it and break the
+# contracts:check comparison against fresh generator output.
+packages/contracts/src/generated/

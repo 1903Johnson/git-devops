@@ -17,6 +17,7 @@
 
 # ---- Claude zone: foundation, security, contracts, infra --------------------
 /packages/contracts/            @1903Johnson
+/packages/sdk/                  @1903Johnson
 /packages/tenancy/              @1903Johnson
 /packages/policy/               @1903Johnson
 /packages/module-kit/           @1903Johnson

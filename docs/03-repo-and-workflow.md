@@ -132,6 +132,7 @@ integration → containerised Postgres 16 + Redis, real RLS      (from Sprint 1)
               ├─ tenant-isolation suite     ← mandatory, cannot be skipped
               └─ module-lifecycle suite     (enable / disable / purge, every module)
 security    → dependency audit                                 (from Sprint 0)
+contracts   → node scripts/check-contracts.mjs   ← runs from day one, inside verify
 ci          → aggregating gate; the single required status check for branch protection
 ```
 

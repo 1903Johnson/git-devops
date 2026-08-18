@@ -135,7 +135,7 @@ Definition of done
 
 ## INF-007b — Web component library (`@church/ui`)
 
-*Sprint 0 · Codex · depends on INF-007a **and** DEP-001 — do not start before both merge*
+*Sprint 0 · Codex · INF-007a and DEP-001 are both merged, so this is ready to start*
 
 ```text
 TICKET: INF-007b — Web component library (@church/ui)
@@ -154,26 +154,55 @@ Scope
   approach explicitly ruled out.
 - Primitives: Button, Input, Select, Card, Badge, Spinner, EmptyState. No church-domain
   components (no MemberCard, no GivingSummary) — those belong to feature tickets.
-- Every visual value comes from @church/ui-tokens. A hardcoded colour or spacing value in
-  this package is a bug; the whole point of INF-007a is that this layer has no opinions of
-  its own about them.
 - Storybook (React renderer) with a story per primitive covering the accessibility-relevant
-  states: disabled, error, loading, focus-visible.
-- Unit tests for anything with behaviour: Button loading/disabled, Input error state and
-  its aria wiring, Select keyboard navigation.
+  states: disabled, error, loading, focus-visible. The preview must inject `themeCss` from
+  @church/ui-tokens and offer a light/dark switch, so stories exercise both themes.
+- Unit tests with vitest + @testing-library/react in a jsdom environment, for anything with
+  behaviour: Button loading/disabled, Input error state and its aria wiring, Select
+  keyboard navigation.
 - Scripts: build, lint, typecheck, test:unit.
 
+How to consume tokens — read this twice
+- Style with the CSS custom properties, e.g. `color: var(--church-color-text-primary)` and
+  `padding: var(--church-spacing-md)`. @church/ui-tokens emits them via createCssVariables
+  / themeCss, keyed by semantic name.
+- Do NOT import `colors.light` (or any theme object) into a component. Those are for React
+  Native. Baking one theme's values into web components makes the [data-theme="dark"]
+  switch a no-op, and nothing in CI would catch it.
+- A hardcoded colour, spacing, radius or duration anywhere in this package is a bug. If a
+  value you need has no token, stop and open a needs-owner:claude issue — do not invent one
+  locally.
+
+Dependencies — this is NOT a zero-dependency package
+- Declare what you import in packages/ui/package.json using catalog references:
+  "react": "catalog:", "react-dom": "catalog:", and for dev "vitest": "catalog:",
+  "jsdom": "catalog:", "@testing-library/react": "catalog:",
+  "@testing-library/user-event": "catalog:", "@testing-library/jest-dom": "catalog:",
+  "@vitejs/plugin-react": "catalog:", "storybook": "catalog:",
+  "@storybook/react-vite": "catalog:", "typescript": "catalog:", "@types/react": "catalog:".
+  Referencing a catalog entry is always allowed; it introduces no new resolution.
+- What is forbidden is a dependency whose version is NOT already in the catalog. If you
+  need one, stop and open a needs-owner:claude issue.
+- Run `pnpm install` and COMMIT the resulting pnpm-lock.yaml diff. Adding a workspace
+  package writes an importer entry, and that diff is yours to commit — see AGENTS.md.
+  Note that `--frozen-lockfile` does not fail without it, so CI will not remind you.
+
 Constraints
-- Depends on @church/ui-tokens ONLY. No app, module, or backend package — packages/ui is a
-  leaf, and the boundary check enforces it.
+- Depends on @church/ui-tokens ONLY, plus the React/test toolchain above. No app, module,
+  or backend package — packages/ui is a leaf and the boundary check enforces it.
+- Set "type": "module" in package.json. Vite 8 warns when an ESM config file is loaded as
+  CommonJS.
 - Every interactive primitive is keyboard-navigable with a visible focus state, and every
   interactive target is at least 44x44px. This ships to volunteers on shared touch kiosks,
   not to power users on laptops.
-- Do NOT add dependencies. DEP-001 has already put React, Storybook, and the test stack in
-  the lockfile. If you need something beyond that, stop and open a needs-owner:claude issue.
+- Write files as UTF-8 with no byte-order mark. Prettier tolerates a BOM, so CI stays green
+  while the files carry invisible junk.
 
 Definition of done
-- Storybook runs; every primitive has a story; `pnpm run verify` passes from the repo root.
+- Storybook runs; every primitive has a story in both themes.
+- `pnpm run verify` and `pnpm run format:check` pass from the repo root.
+- `grep -rE "#[0-9a-fA-F]{3,6}|[0-9]+px" packages/ui/src` finds nothing outside a comment —
+  every visual value comes from a token.
 ```
 
 ### Why two packages
