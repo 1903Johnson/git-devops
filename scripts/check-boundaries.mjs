@@ -36,8 +36,7 @@ const CODE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage']);
 
 const violations = [];
-const report = (rule, file, line, message) =>
-  violations.push({ rule, file, line, message });
+const report = (rule, file, line, message) => violations.push({ rule, file, line, message });
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -115,8 +114,7 @@ for (const mod of modules) {
     if (!CODE_EXT.has(file.slice(file.lastIndexOf('.')))) continue;
     eachLine(file, (text, line) => {
       for (const [, spec] of text.matchAll(IMPORT_RE)) {
-        const hit =
-          spec.match(/(?:^|\/)modules\/([\w-]+)/) || spec.match(/^@church\/mod-([\w-]+)/);
+        const hit = spec.match(/(?:^|\/)modules\/([\w-]+)/) || spec.match(/^@church\/mod-([\w-]+)/);
         if (!hit) continue;
         const target = modules.find((m) => m.dir === hit[1] || m.key === hit[1]);
         if (!target || target.dir === mod.dir) continue;
@@ -183,7 +181,12 @@ for (const file of walk(ROOT).filter((f) => f.endsWith('.sql'))) {
     const bodyEnd = body.indexOf(');');
     if (!body.slice(0, bodyEnd === -1 ? undefined : bodyEnd).includes('church_id')) continue;
     if (!lower.includes(`alter table ${table} enable row level security`.toLowerCase())) {
-      report('C5', rel(file), 0, `tenant-scoped table "${table}" does not enable row level security`);
+      report(
+        'C5',
+        rel(file),
+        0,
+        `tenant-scoped table "${table}" does not enable row level security`,
+      );
     }
   }
 }
