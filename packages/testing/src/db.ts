@@ -45,11 +45,21 @@ export async function closeAdminPool(): Promise<void> {
 
 /** Creates the non-superuser test role if it does not exist, and grants it schema usage. */
 export async function ensureAppRole(client: PoolClient): Promise<void> {
+  // The existence check and the CREATE are not atomic, and CI runs this package's suite in
+  // parallel with @church/tenancy's against one database — both racing to create the role.
+  //
+  // Both exception classes are needed: a concurrent CREATE ROLE surfaces as
+  // unique_violation on pg_authid_rolname_index, not the duplicate_object you would expect
+  // (verified by racing eight connections at it; catching duplicate_object alone still
+  // failed). Catching both is what makes this idempotent rather than
+  // idempotent-until-it-matters.
   await client.query(`
     DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
         CREATE ROLE ${APP_ROLE} NOLOGIN;
       END IF;
+    EXCEPTION WHEN duplicate_object OR unique_violation THEN
+      NULL;
     END $$;
   `);
   await client.query(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}`);

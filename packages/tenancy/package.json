@@ -1,0 +1,25 @@
+{
+  "name": "@church/tenancy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run test/context.test.ts",
+    "test:integration": "vitest run test/database.integration.test.ts",
+    "test:isolation": "vitest run test/isolation.test.ts"
+  },
+  "dependencies": {
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@church/testing": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
