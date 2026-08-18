@@ -12,11 +12,13 @@ documented below.
 
 | Doc | Read it for |
 |---|---|
+| [`AGENTS.md`](AGENTS.md) | The working agreement both agents follow — ownership zones, boundary rules, verification |
 | [`docs/00-review-and-decisions.md`](docs/00-review-and-decisions.md) | What changed from the original architecture and why; decision log |
 | [`docs/01-architecture.md`](docs/01-architecture.md) | Revised system architecture: core vs. optional modules |
 | [`docs/02-module-system.md`](docs/02-module-system.md) | The optional-module contract; Children's Check-in as reference implementation |
 | [`docs/03-repo-and-workflow.md`](docs/03-repo-and-workflow.md) | Monorepo layout, branching, CI, the two-agent workflow |
 | [`docs/04-delivery-plan.md`](docs/04-delivery-plan.md) | Sprint plan with per-ticket ownership (Claude vs Codex) |
+| [`docs/05-agent-prompts.md`](docs/05-agent-prompts.md) | Ready-to-use ticket prompts for handing work to Codex |
 
 ## Headline decisions
 
@@ -30,7 +32,15 @@ documented below.
 - **Contract-first development**: `packages/contracts` is the handoff artifact between the
   two agents, so both can build simultaneously without waiting on each other.
 
+## Getting started
+
+```bash
+pnpm install
+pnpm run verify     # boundaries + doc links + lint + typecheck + unit tests
+```
+
 ## Status
 
-Planning complete; implementation starts at Sprint 0 in
-[`docs/04-delivery-plan.md`](docs/04-delivery-plan.md).
+Sprint 0 in progress. The workspace scaffold and CI pipeline are in place; the boundary
+rules that protect the module architecture are enforced on every PR. Remaining Sprint 0
+tickets and their owners are in [`docs/04-delivery-plan.md`](docs/04-delivery-plan.md).

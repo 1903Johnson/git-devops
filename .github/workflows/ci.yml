@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Module boundary rules (C1–C5)
         run: node scripts/check-boundaries.mjs
 
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Relative link integrity
         run: node scripts/check-doc-links.mjs
 
@@ -60,7 +60,9 @@ jobs:
       - name: No committed secrets or env files
         run: |
           set -euo pipefail
-          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.pem$|\.p12$|id_rsa' || true)
+          bad=$(git ls-files \
+            | grep -E '(^|/)\.env($|\.)|\.pem$|\.p12$|(^|/)id_rsa' \
+            | grep -vE '\.(example|sample|template)$' || true)
           if [ -n "$bad" ]; then
             echo "::error::secret-bearing files must never be committed:"
             echo "$bad"
@@ -76,12 +78,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r lint
-      - run: pnpm -r typecheck
-      - run: pnpm -r test:unit
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm -r --if-present run typecheck
+      - run: pnpm -r --if-present run test:unit
 
   # Integration tests run against a real PostgreSQL because the behaviour that matters
   # most here — Row-Level Security — does not exist in a mocked repository.
@@ -112,18 +115,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r migrate:test
-      - run: pnpm -r test:integration
+      - run: pnpm -r --if-present run migrate:test
+      - run: pnpm -r --if-present run test:integration
 
-      # Mandatory categories (docs/03 §6). These are separate steps rather than folded
-      # into the integration run so a failure names the invariant that broke.
+      # --if-present lets the pipeline activate incrementally, which also means a deleted
+      # script would silently pass. Once the API app exists these suites are mandatory,
+      # so assert they are defined before trusting a green result.
+      - name: Mandatory suites must be defined once apps/api exists
+        run: |
+          set -euo pipefail
+          if [ -d apps/api ]; then
+            for script in test:isolation test:module-lifecycle; do
+              if ! grep -rql "\"$script\"" --include=package.json apps modules packages; then
+                echo "::error::$script is not defined in any workspace package — see docs/03 §6"
+                exit 1
+              fi
+            done
+          fi
+          echo "mandatory suite check: ok"
+
+      # Separate steps rather than folded into the integration run so a failure names the
+      # invariant that broke.
       - name: Tenant isolation suite
-        run: pnpm -r test:isolation
+        run: pnpm -r --if-present run test:isolation
       - name: Module lifecycle suite (enable / disable / purge)
-        run: pnpm -r test:module-lifecycle
+        run: pnpm -r --if-present run test:module-lifecycle
 
   security:
     needs: detect
@@ -133,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - name: Dependency audit
