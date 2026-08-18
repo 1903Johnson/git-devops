@@ -95,9 +95,45 @@ it is not evidence of theft.
 **A family per login.** One device's compromise or logout does not touch the others; a test
 covers both directions.
 
-## What is missing on purpose
+## MFA (CORE-015)
 
-- **MFA** — CORE-015.
+TOTP, required for `STAFF`, `PASTOR`, `CHURCH_ADMIN`, and `CAMPUS_ADMIN` — the roles that
+reach giving records, pastoral cases, and children's data. Members are encouraged but not
+required: forcing MFA on a congregation of volunteers produces shared secrets on sticky
+notes, not security.
+
+**TOTP is implemented here rather than imported.** The algorithm is thirty lines and RFC
+6238 publishes official test vectors, so it can be *proved* correct against the
+specification. All six vectors are asserted. A wrong TOTP implementation locks every staff
+account out of the system, which is not a thing to take on faith from a transitive
+dependency.
+
+**Secrets are encrypted at rest, not hashed.** A password is hashed because it never needs
+reading back; a TOTP secret does, so it is sealed with AES-256-GCM. Storing it in the clear
+would let a database dump mint valid second factors indefinitely — worse than leaking
+password hashes. GCM rather than CBC so tampering fails loudly, and decryption failures are
+deliberately indistinguishable from a wrong key.
+
+**Enrollment does not take effect until a code confirms it.** Enabling on issue locks out
+anyone who mistyped the setup or lost the QR halfway.
+
+**Codes are single-use.** A TOTP code stays valid for its whole 30-second step, so the
+highest accepted counter is recorded and anything at or below it is refused. Without that, a
+code read over a shoulder or phished seconds ago still works. One consequence worth knowing:
+the code that confirms enrollment cannot then log you in during the same step — the app
+shows the next one within thirty seconds.
+
+**The MFA challenge carries a different audience from an access token.** A challenge proves
+the password was right and nothing more. If it verified as an access token, MFA would be
+optional for anyone who read the response body; there is a test asserting it does not.
+
+**Recovery codes are SHA-256, not scrypt** — the same reasoning as refresh tokens. They are
+80 bits the server generated, so there is no dictionary to run, and ten scrypt hashes at
+64 MiB each added roughly two seconds to an interactive enrollment request. They are
+consumed by a conditional `UPDATE ... WHERE used_at IS NULL`, so two racing requests cannot
+both spend one: the database picks the winner, not the process.
+
+## What is missing on purpose
 - **Self-service unlock via a verified channel** — needs the Communications module
   (CORE-030). Until then a locked account waits out the timer or is cleared by an admin.
 - **Audit records** — CORE-021. Login failures and lockouts are exactly what that log is

@@ -1,0 +1,255 @@
+import { randomBytes } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Pool } from 'pg';
+import { APP_ROLE, ensureAppRole } from '@church/testing';
+import { CORE_MIGRATIONS_DIR, applyMigrations, collectMigrations } from '@church/migrations';
+import {
+  IdentityService,
+  MfaService,
+  RECOVERY_CODE_COUNT,
+  SessionService,
+  counterFor,
+  fromBase32,
+  generateCode,
+  mfaRequiredFor,
+  verifyAccessToken,
+  type KeyRing,
+} from '../src/index.js';
+
+let pool: Pool;
+let identity: IdentityService;
+let mfa: MfaService;
+let sessions: SessionService;
+let churchId: string;
+
+const PASSWORD = 'correct horse battery staple';
+const keys: KeyRing = { active: { kid: 'test', secret: new Uint8Array(randomBytes(32)) } };
+const encryptionKey = new Uint8Array(randomBytes(32));
+const email = () => `mfa-${Math.random().toString(36).slice(2)}@example.org`;
+const codeFor = (secret: string) => generateCode(fromBase32(secret), counterFor());
+/**
+ * The *next* step's code, which the authenticator app will show in a moment.
+ *
+ * Needed because confirming enrollment consumes the code it was confirmed with: the
+ * replay guard records that counter, so the same code cannot log in during the same
+ * 30-second step. That is correct behaviour, and these tests would otherwise be asserting
+ * that a used code still works.
+ */
+const nextCodeFor = (secret: string) => generateCode(fromBase32(secret), counterFor() + 1);
+
+beforeAll(async () => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is not set');
+  pool = new Pool({ connectionString, max: 6 });
+
+  const client = await pool.connect();
+  try {
+    await ensureAppRole(client);
+    await applyMigrations(client, collectMigrations([CORE_MIGRATIONS_DIR]), { appRole: APP_ROLE });
+  } finally {
+    client.release();
+  }
+
+  identity = new IdentityService({ pool, appRole: APP_ROLE, policy: { checkBreaches: false } });
+  mfa = new MfaService({ pool, encryptionKey, appRole: APP_ROLE });
+  sessions = new SessionService({ pool, identity, keys, appRole: APP_ROLE, mfa });
+});
+
+afterAll(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query('DELETE FROM church WHERE name LIKE $1', ['mfa-test-%']);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+});
+
+beforeEach(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query('DELETE FROM church WHERE name LIKE $1', ['mfa-test-%']);
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO church (name, country) VALUES ('mfa-test', 'US') RETURNING id`,
+    );
+    churchId = rows[0]!.id;
+  } finally {
+    client.release();
+  }
+});
+
+async function enrolledUser() {
+  const address = email();
+  const created = await identity.register(churchId, address, PASSWORD);
+  if (created.status !== 'created') throw new Error('setup failed');
+
+  const challenge = await mfa.beginEnrollment(churchId, created.userId, address);
+  const confirmed = await mfa.confirmEnrollment(
+    churchId,
+    created.userId,
+    codeFor(challenge.secret),
+  );
+  if (confirmed.status !== 'confirmed') throw new Error('enrollment failed');
+
+  return {
+    address,
+    userId: created.userId,
+    secret: challenge.secret,
+    recoveryCodes: confirmed.recoveryCodes,
+  };
+}
+
+describe('role policy', () => {
+  it('requires MFA for privileged roles and not for members', () => {
+    expect(mfaRequiredFor(['CHURCH_ADMIN'])).toBe(true);
+    expect(mfaRequiredFor(['MEMBER', 'PASTOR'])).toBe(true);
+    expect(mfaRequiredFor(['MEMBER'])).toBe(false);
+    expect(mfaRequiredFor([])).toBe(false);
+  });
+});
+
+describe('enrollment', () => {
+  it('does not take effect until a code confirms it', async () => {
+    // Enabling on issue locks out anyone who mistyped the setup or lost the QR.
+    const address = email();
+    const created = await identity.register(churchId, address, PASSWORD);
+    if (created.status !== 'created') throw new Error('setup failed');
+
+    await mfa.beginEnrollment(churchId, created.userId, address);
+    expect(await mfa.isEnrolled(churchId, created.userId)).toBe(false);
+
+    const login = await sessions.login(address, PASSWORD);
+    expect(login.status).toBe('success');
+  });
+
+  it('rejects a wrong confirmation code and stays unenrolled', async () => {
+    const address = email();
+    const created = await identity.register(churchId, address, PASSWORD);
+    if (created.status !== 'created') throw new Error('setup failed');
+
+    await mfa.beginEnrollment(churchId, created.userId, address);
+    expect((await mfa.confirmEnrollment(churchId, created.userId, '000000')).status).toBe(
+      'invalid_code',
+    );
+    expect(await mfa.isEnrolled(churchId, created.userId)).toBe(false);
+  });
+
+  it('issues recovery codes exactly once, on confirmation', async () => {
+    const { userId, recoveryCodes } = await enrolledUser();
+    expect(recoveryCodes).toHaveLength(RECOVERY_CODE_COUNT);
+    expect(new Set(recoveryCodes).size).toBe(RECOVERY_CODE_COUNT);
+    expect(await mfa.remainingRecoveryCodes(churchId, userId)).toBe(RECOVERY_CODE_COUNT);
+  });
+
+  it('stores the secret encrypted, not in the clear', async () => {
+    const { userId, secret } = await enrolledUser();
+    const { rows } = await pool.query<{ secret_ciphertext: Buffer }>(
+      'SELECT secret_ciphertext FROM mfa_credential WHERE user_id = $1',
+      [userId],
+    );
+    expect(rows[0]!.secret_ciphertext.toString('utf8')).not.toContain(secret);
+    expect(rows[0]!.secret_ciphertext.toString('base64')).not.toContain(secret);
+  });
+});
+
+describe('login with MFA', () => {
+  it('withholds tokens and returns a challenge', async () => {
+    const { address } = await enrolledUser();
+    const login = await sessions.login(address, PASSWORD);
+    expect(login.status).toBe('mfa_required');
+    if (login.status !== 'mfa_required') return;
+    expect(login).not.toHaveProperty('tokens');
+  });
+
+  it('refuses to accept the challenge as an access token', async () => {
+    // The whole point of the separate audience: a challenge proves the password was
+    // right and nothing more. If it verified as an access token, MFA would be optional
+    // for anyone who read the response body.
+    const { address } = await enrolledUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'mfa_required') throw new Error('expected a challenge');
+
+    await expect(verifyAccessToken(login.challenge, keys)).rejects.toThrow();
+  });
+
+  it('issues tokens once a valid code is supplied', async () => {
+    const { address, secret } = await enrolledUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'mfa_required') throw new Error('expected a challenge');
+
+    const completed = await sessions.completeMfa(login.challenge, nextCodeFor(secret));
+    expect(completed.status).toBe('success');
+    if (completed.status !== 'success') return;
+    await expect(verifyAccessToken(completed.tokens.accessToken, keys)).resolves.toBeDefined();
+  });
+
+  it('rejects a wrong code, and a forged challenge', async () => {
+    const { address, secret } = await enrolledUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'mfa_required') throw new Error('expected a challenge');
+
+    expect((await sessions.completeMfa(login.challenge, '000000')).status).toBe('invalid');
+    expect((await sessions.completeMfa('not-a-token', nextCodeFor(secret))).status).toBe('invalid');
+  });
+});
+
+describe('replay and recovery', () => {
+  it('refuses to reuse the code that confirmed enrollment', async () => {
+    // Read the consumed counter back rather than assuming the test still sits inside the
+    // same 30-second step — otherwise this passes or fails depending on when it runs.
+    const { userId, secret } = await enrolledUser();
+    const { rows } = await pool.query<{ last_used_counter: string }>(
+      'SELECT last_used_counter FROM mfa_credential WHERE user_id = $1',
+      [userId],
+    );
+    const consumed = Number(rows[0]!.last_used_counter);
+    const alreadyUsed = generateCode(fromBase32(secret), consumed);
+
+    expect((await mfa.verify(churchId, userId, alreadyUsed)).status).toBe('invalid');
+  });
+
+  it('refuses the same TOTP code twice', async () => {
+    // A code stays valid for its full 30-second step, so without the counter check a code
+    // read over a shoulder still works.
+    const { userId, secret } = await enrolledUser();
+    const code = nextCodeFor(secret);
+
+    expect((await mfa.verify(churchId, userId, code)).status).toBe('ok');
+    expect((await mfa.verify(churchId, userId, code)).status).toBe('invalid');
+  });
+
+  it('accepts a recovery code once and never again', async () => {
+    const { userId, recoveryCodes } = await enrolledUser();
+    const [first] = recoveryCodes;
+
+    const used = await mfa.verify(churchId, userId, first!);
+    expect(used).toEqual({ status: 'ok', method: 'recovery' });
+    expect((await mfa.verify(churchId, userId, first!)).status).toBe('invalid');
+    expect(await mfa.remainingRecoveryCodes(churchId, userId)).toBe(RECOVERY_CODE_COUNT - 1);
+  });
+
+  it('accepts a recovery code however the user types it', async () => {
+    const { userId, recoveryCodes } = await enrolledUser();
+    const messy = recoveryCodes[1]!.toLowerCase().replace(/-/g, ' ');
+    expect((await mfa.verify(churchId, userId, messy)).status).toBe('ok');
+  });
+
+  it('lets a recovery code complete a real login', async () => {
+    const { address, recoveryCodes } = await enrolledUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'mfa_required') throw new Error('expected a challenge');
+
+    expect((await sessions.completeMfa(login.challenge, recoveryCodes[2]!)).status).toBe('success');
+  });
+});
+
+describe('disable', () => {
+  it('removes the credential and its recovery codes together', async () => {
+    const { address, userId } = await enrolledUser();
+    await mfa.disable(churchId, userId);
+
+    expect(await mfa.isEnrolled(churchId, userId)).toBe(false);
+    expect(await mfa.remainingRecoveryCodes(churchId, userId)).toBe(0);
+    expect((await sessions.login(address, PASSWORD)).status).toBe('success');
+  });
+});

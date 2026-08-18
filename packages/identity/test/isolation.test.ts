@@ -111,6 +111,60 @@ describe('refresh_token isolation', () => {
   });
 });
 
+describe('MFA table isolation', () => {
+  const seedUser = async (c: PoolClient, churchId: string, prefix: string) => {
+    await c.query(`INSERT INTO church (id, name, country) VALUES ($1, $2, 'US')`, [
+      churchId,
+      `identity-iso-${prefix}`,
+    ]);
+    const user = await c.query<{ id: string }>(
+      `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+      [churchId, `${prefix}-${Math.random().toString(36).slice(2)}@example.org`],
+    );
+    return user.rows[0]!.id;
+  };
+
+  it('isolates mfa_credential, which holds the encrypted secrets', async () => {
+    await withRollback(async (client: PoolClient) => {
+      await assertTenantIsolation(client, {
+        table: 'mfa_credential',
+        insert: async (c, churchId) => {
+          const userId = await seedUser(c, churchId, 'mfacred');
+          // Passed as parameters rather than inlined: a backslash-x-zero-zero escape
+          // inside a template literal is a real NUL byte in the JS string, which
+          // derails the Postgres wire protocol rather than producing a bytea literal.
+          const filler = Buffer.from([0]);
+          const { rows } = await c.query<{ id: string }>(
+            `INSERT INTO mfa_credential (church_id, user_id, secret_ciphertext, secret_iv, secret_tag)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [churchId, userId, filler, filler, filler],
+          );
+          if (!rows[0]) throw new Error('insert returned no row');
+          return rows[0].id;
+        },
+      });
+    });
+  });
+
+  it('isolates mfa_recovery_code', async () => {
+    await withRollback(async (client: PoolClient) => {
+      await assertTenantIsolation(client, {
+        table: 'mfa_recovery_code',
+        insert: async (c, churchId) => {
+          const userId = await seedUser(c, churchId, 'mfarec');
+          const { rows } = await c.query<{ id: string }>(
+            `INSERT INTO mfa_recovery_code (church_id, user_id, code_hash)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [churchId, userId, `hash-${Math.random().toString(36).slice(2)}`],
+          );
+          if (!rows[0]) throw new Error('insert returned no row');
+          return rows[0].id;
+        },
+      });
+    });
+  });
+});
+
 describe('authentication crosses tenants by design', () => {
   it('finds a user by email with no tenant context, and only through the audited path', async () => {
     const service = new IdentityService({
