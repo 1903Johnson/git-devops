@@ -118,22 +118,47 @@ Rules:
 
 ## 6. CI pipeline (blocking on every PR)
 
+Implemented in `.github/workflows/ci.yml`.
+
 ```
-lint · typecheck
-  → boundary check     (core must not import modules/*; modules must not import each other
-                        outside declared requires[])
-  → unit tests
-  → integration tests  (containerised Postgres, real RLS)
-  → tenant-isolation suite      ← mandatory category, cannot be skipped
-  → module-lifecycle suite      (enable / disable / purge for every module)
-  → dependency + secret scan
-  → build
-  → deploy to staging (main only) → smoke tests → manual promote to prod
+detect      → which parts of the stack exist yet (gates the jobs below)
+boundaries  → node scripts/check-boundaries.mjs      ← runs from day one
+docs        → node scripts/check-doc-links.mjs       ← runs from day one
+hygiene     → no committed .env / key material       ← runs from day one
+quality     → lint · typecheck · unit tests                    (from Sprint 0)
+integration → containerised Postgres 16 + Redis, real RLS      (from Sprint 1)
+              ├─ tenant-isolation suite     ← mandatory, cannot be skipped
+              └─ module-lifecycle suite     (enable / disable / purge, every module)
+security    → dependency audit                                 (from Sprint 0)
+ci          → aggregating gate; the single required status check for branch protection
 ```
 
-Two of these are unusual and both are load-bearing: the **boundary check** is what keeps
-the module system real over time, and the **tenant-isolation suite** is what keeps the
-worst-case incident from happening. Neither may be marked `continue-on-error`.
+`quality`, `integration`, and `security` are gated on the presence of `package.json` and
+report *skipped* until Sprint 0 lands the workspace — a gated job is honest, a job whose
+steps silently no-op is a false green.
+
+The boundary check enforces five rules, each mapping to an invariant in
+`docs/01-architecture.md` §2 and `docs/02-module-system.md` §6:
+
+| Rule | Invariant |
+|---|---|
+| **C1** | Backend core must not import from `modules/*` (`packages/sdk`, `packages/contracts` exempt as generated) |
+| **C2** | Cross-module imports must be declared in the importing module's manifest `requires[]` |
+| **C3** | A module key must not appear outside its own module (narrow, documented exemptions only) |
+| **C4** | Module tables must be prefixed `mod_<key>_`, so purge stays mechanical |
+| **C5** | Any table carrying `church_id` must `ENABLE ROW LEVEL SECURITY` |
+
+Client shells (`admin-web`, `member-mobile`, `kiosk`) are deliberately outside C1/C3: they
+lazy-load module UI, so a compile-time reference is expected. Their invariant — navigation
+rendered from `GET /me/modules`, never hardcoded — is a review-checklist item, because grep
+cannot prove it.
+
+Two jobs are load-bearing above all others: the **boundary check** is what keeps the module
+system real over time, and the **tenant-isolation suite** is what keeps the worst-case
+incident from happening. Neither may be marked `continue-on-error`.
+
+**Repo setting, not a file:** `main` should require the `ci` status check plus one approving
+review. Configure it in branch protection once this pipeline has run green.
 
 ## 7. Cadence
 
