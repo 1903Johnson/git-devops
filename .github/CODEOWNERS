@@ -1,38 +1,47 @@
-# Ownership zones for the two-agent workflow (see docs/03-repo-and-workflow.md).
-# Replace the placeholder handles with the real GitHub accounts/teams driving each agent.
+# Every path routes to the repository owner, who is reviewer of record for all work
+# produced by both agents.
 #
-#   @claude-agent : Claude — risk, ambiguity, security, contracts, infra
-#   @codex-agent  : Codex  — well-specified throughput: CRUD modules, UI, fixtures
+# The zone comments below are NOT decoration: they record which agent owns which
+# directory under the working agreement in docs/03-repo-and-workflow.md §2 and
+# AGENTS.md. GitHub cannot enforce that split today because both agents push through
+# the same account — so the zones are enforced by the PR checklist and by review, and
+# this file exists to route the review and to document the intent.
+#
+# When either agent gets its own GitHub identity, replace the handle on that agent's
+# lines and turn on "Require review from Code Owners" in branch protection. Note that
+# GitHub never requests review from a PR's own author, so code-owner enforcement only
+# becomes meaningful once author and owner can differ.
 
-* @claude-agent
+* @1903Johnson
 
-# ---- Claude: foundation, security, contracts, infra -------------------------
-/packages/contracts/            @claude-agent
-/packages/tenancy/              @claude-agent
-/packages/policy/               @claude-agent
-/packages/module-kit/           @claude-agent
-/packages/testing/              @claude-agent
-/infra/                         @claude-agent
-/.github/                       @claude-agent
-/docs/adr/                      @claude-agent
+# ---- Claude zone: foundation, security, contracts, infra --------------------
+/packages/contracts/            @1903Johnson
+/packages/tenancy/              @1903Johnson
+/packages/policy/               @1903Johnson
+/packages/module-kit/           @1903Johnson
+/packages/testing/              @1903Johnson
+/infra/                         @1903Johnson
+/.github/                       @1903Johnson
+/scripts/                       @1903Johnson
+/docs/adr/                      @1903Johnson
 
-# ---- Claude: money, confidentiality, child safety ---------------------------
-/modules/giving/                @claude-agent
-/modules/pastoral-care/         @claude-agent
-/modules/children-checkin/      @claude-agent
+# ---- Claude zone: money, confidentiality, child safety ----------------------
+/modules/giving/                @1903Johnson
+/modules/pastoral-care/         @1903Johnson
+/modules/children-checkin/      @1903Johnson
 
-# ---- Codex: throughput zones ------------------------------------------------
-/packages/ui/                   @codex-agent
-/apps/admin-web/                @codex-agent
-/apps/member-mobile/            @codex-agent
-/apps/kiosk/                    @codex-agent
-/modules/prayer-wall/           @codex-agent
-/modules/volunteer-scheduling/  @codex-agent
-/modules/facilities/            @codex-agent
-/modules/media-library/         @codex-agent
+# ---- Codex zone: throughput ------------------------------------------------
+/packages/ui/                   @1903Johnson
+/apps/admin-web/                @1903Johnson
+/apps/member-mobile/            @1903Johnson
+/apps/kiosk/                    @1903Johnson
+/modules/prayer-wall/           @1903Johnson
+/modules/volunteer-scheduling/  @1903Johnson
+/modules/facilities/            @1903Johnson
+/modules/media-library/         @1903Johnson
 
-# ---- Codex zones inside Claude-owned modules --------------------------------
-# UI and device-side work for children-checkin is Codex's, but still needs
-# Claude's review because of the data class involved.
-/modules/children-checkin/kiosk-ui/   @codex-agent @claude-agent
-/modules/giving/ui/                   @codex-agent @claude-agent
+# ---- Codex zone inside Claude-owned modules ---------------------------------
+# UI and device-side work for children-checkin is Codex's, but the data class means
+# it always needs Claude's review too.
+/modules/children-checkin/kiosk-ui/   @1903Johnson
+/modules/giving/ui/                   @1903Johnson
