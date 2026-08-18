@@ -63,9 +63,40 @@ Composition rules push people toward `Password1!` and away from passphrases. Wha
 screened instead: length, breach membership, similarity to the account's own email, and
 trivially repetitive input.
 
+## Sessions (CORE-014)
+
+`SessionService` turns verified credentials into a token pair and takes it away again.
+
+**Access tokens are stateless and short-lived (15 minutes).** Verifying one is a signature
+check, not a database round trip, which is what makes per-request authentication cheap. The
+price is that an access token cannot be revoked mid-life: after "log out all devices", an
+already-issued access token stays valid until it expires. A test asserts that window exists
+rather than pretending otherwise — 15 minutes *is* the exposure, and it is why the TTL is
+short. Anything needing instant revocation must check state server-side.
+
+**The algorithm is pinned on verification.** Without that, a token claiming `alg: none`
+is accepted as valid; there is a test that forges exactly that.
+
+**Signing keys are a ring, not a value.** The active key signs; previously active keys stay
+in `accepted` until every token they signed has expired. Without the overlap, rotating a key
+logs out everyone holding a valid token.
+
+**Refresh tokens are opaque, hashed, and rotate on every use.** SHA-256 rather than scrypt,
+deliberately: these are 256 bits of uniform randomness, not user-chosen passwords, so a slow
+hash buys nothing and would add ~100 ms to every refresh.
+
+**Reuse of a rotated token revokes the entire family.** Rotation makes a token valid exactly
+once, so a second presentation is a replay or a stolen copy — indistinguishable from the
+server's side. Killing the family logs out both the attacker and the legitimate holder.
+That is the right trade: the alternative leaves a thief with a live session and the user
+with no signal anything happened. A deliberate logout does *not* escalate this way, because
+it is not evidence of theft.
+
+**A family per login.** One device's compromise or logout does not touch the others; a test
+covers both directions.
+
 ## What is missing on purpose
 
-- **Token issuance, refresh rotation, revocation** — CORE-014.
 - **MFA** — CORE-015.
 - **Self-service unlock via a verified channel** — needs the Communications module
   (CORE-030). Until then a locked account waits out the timer or is cleared by an admin.
