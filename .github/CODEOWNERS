@@ -17,10 +17,13 @@
 
 # ---- Claude zone: foundation, security, contracts, infra --------------------
 /packages/contracts/            @1903Johnson
+/packages/sdk/                  @1903Johnson
 /packages/tenancy/              @1903Johnson
 /packages/policy/               @1903Johnson
 /packages/module-kit/           @1903Johnson
 /packages/testing/              @1903Johnson
+/packages/migrations/           @1903Johnson
+/packages/identity/             @1903Johnson
 /infra/                         @1903Johnson
 /.github/                       @1903Johnson
 /scripts/                       @1903Johnson
