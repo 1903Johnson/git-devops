@@ -30,7 +30,11 @@ export {
 } from './service.js';
 export {
   ACCESS_TOKEN_TTL_SECONDS,
+  MFA_CHALLENGE_TTL_SECONDS,
   InvalidAccessTokenError,
+  issueMfaChallenge,
+  verifyMfaChallenge,
+  type MfaChallengeClaims,
   issueAccessToken,
   verifyAccessToken,
   type AccessTokenClaims,
@@ -53,3 +57,28 @@ export {
   type SessionServiceOptions,
   type TokenPair,
 } from './session.js';
+export {
+  TOTP,
+  counterFor,
+  fromBase32,
+  generateCode,
+  generateTotpSecret,
+  otpauthUri,
+  toBase32,
+  verifyCode,
+  type TotpVerification,
+} from './totp.js';
+export { SecretDecryptionError, openSecret, sealSecret, type SealedSecret } from './secret-box.js';
+export {
+  MFA_REQUIRED_ROLES,
+  MfaService,
+  RECOVERY_CODE_COUNT,
+  generateRecoveryCode,
+  hashRecoveryCode,
+  mfaRequiredFor,
+  normalizeRecoveryCode,
+  type ConfirmResult,
+  type EnrollmentChallenge,
+  type MfaServiceOptions,
+  type MfaVerifyResult,
+} from './mfa.js';

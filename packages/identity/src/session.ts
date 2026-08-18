@@ -7,9 +7,12 @@ import { IdentityService, type LoginResult } from './service.js';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   issueAccessToken,
+  issueMfaChallenge,
+  verifyMfaChallenge,
   type AccessTokenClaims,
   type KeyRing,
 } from './jwt.js';
+import type { MfaService } from './mfa.js';
 import {
   decideRefresh,
   generateRefreshSecret,
@@ -26,6 +29,8 @@ export interface TokenPair {
 
 export type SessionResult =
   | { readonly status: 'success'; readonly tokens: TokenPair; readonly userId: string }
+  /** Credentials were right; a second factor is still owed. */
+  | { readonly status: 'mfa_required'; readonly challenge: string }
   | { readonly status: 'invalid' }
   | { readonly status: 'locked'; readonly retryAfterMs: number }
   | { readonly status: 'disabled' };
@@ -41,6 +46,8 @@ export interface SessionServiceOptions {
   readonly identity: IdentityService;
   readonly keys: KeyRing;
   readonly appRole?: string;
+  /** Omit to run without MFA — used by tests that are not exercising it. */
+  readonly mfa?: MfaService;
 }
 
 export class SessionService {
@@ -48,6 +55,7 @@ export class SessionService {
   readonly #db: TenantDatabase;
   readonly #identity: IdentityService;
   readonly #keys: KeyRing;
+  readonly #mfa: MfaService | undefined;
 
   constructor(options: SessionServiceOptions) {
     this.#pool = options.pool;
@@ -57,6 +65,7 @@ export class SessionService {
     );
     this.#identity = options.identity;
     this.#keys = options.keys;
+    this.#mfa = options.mfa;
   }
 
   /** Verifies credentials and, on success, opens a new token family. */
@@ -66,6 +75,19 @@ export class SessionService {
 
     const context = await this.#loadUserContext(result.userId);
     if (!context) return { status: 'invalid' };
+
+    // Enrolled users get a challenge instead of tokens. The password alone is not a
+    // session here, and the challenge cannot be used as one — it carries a different
+    // audience, which every access-token verification rejects.
+    if (this.#mfa && (await this.#mfa.isEnrolled(context.churchId, context.userId))) {
+      return {
+        status: 'mfa_required',
+        challenge: await issueMfaChallenge(
+          { sub: context.userId, church_id: context.churchId },
+          this.#keys,
+        ),
+      };
+    }
 
     const tokens = await runWithTenant({ churchId: context.churchId }, () =>
       this.#issuePair(context.userId, context.churchId, crypto.randomUUID(), deviceLabel),
@@ -129,6 +151,31 @@ export class SessionService {
 
       return { status: 'success', tokens, userId: stored.user_id } as const;
     });
+  }
+
+  /**
+   * Completes a login that owed a second factor.
+   *
+   * A challenge is single-use in effect: it is consumed by producing tokens, and its
+   * five-minute life bounds how long a stolen one is worth anything.
+   */
+  async completeMfa(challenge: string, code: string, deviceLabel?: string): Promise<SessionResult> {
+    if (!this.#mfa) return { status: 'invalid' };
+
+    let claims;
+    try {
+      claims = await verifyMfaChallenge(challenge, this.#keys);
+    } catch {
+      return { status: 'invalid' };
+    }
+
+    const verified = await this.#mfa.verify(claims.church_id, claims.sub, code);
+    if (verified.status !== 'ok') return { status: 'invalid' };
+
+    const tokens = await runWithTenant({ churchId: claims.church_id }, () =>
+      this.#issuePair(claims.sub, claims.church_id, crypto.randomUUID(), deviceLabel),
+    );
+    return { status: 'success', tokens, userId: claims.sub };
   }
 
   /** Ends one session — the device that holds this token, and nothing else. */

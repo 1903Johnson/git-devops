@@ -38,7 +38,18 @@ export interface KeyRing {
 
 const ISSUER = 'church-platform';
 const AUDIENCE = 'church-platform-api';
+/**
+ * Separate audience for the half-authenticated MFA step.
+ *
+ * A challenge proves the password was right and nothing more. Sharing an audience with
+ * access tokens would mean a challenge is accepted by every API route — password-only
+ * access to a system that requires two factors. The split is what makes that impossible
+ * rather than merely unlikely.
+ */
+const MFA_AUDIENCE = 'church-platform-mfa';
 const ALGORITHM = 'HS256';
+
+export const MFA_CHALLENGE_TTL_SECONDS = 5 * 60;
 
 export class InvalidAccessTokenError extends Error {
   constructor(reason: string) {
@@ -107,5 +118,56 @@ export async function verifyAccessToken(
 
   throw new InvalidAccessTokenError(
     lastError instanceof Error ? lastError.message : 'no key accepted the signature',
+  );
+}
+
+export interface MfaChallengeClaims {
+  readonly sub: string;
+  readonly church_id: string;
+}
+
+/** Short-lived proof that credentials were verified, pending a second factor. */
+export async function issueMfaChallenge(
+  claims: MfaChallengeClaims,
+  keys: KeyRing,
+  ttlSeconds: number = MFA_CHALLENGE_TTL_SECONDS,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({ church_id: claims.church_id })
+    .setProtectedHeader({ alg: ALGORITHM, kid: keys.active.kid })
+    .setSubject(claims.sub)
+    .setIssuer(ISSUER)
+    .setAudience(MFA_AUDIENCE)
+    .setIssuedAt(now)
+    .setExpirationTime(now + ttlSeconds)
+    .sign(keys.active.secret);
+}
+
+export async function verifyMfaChallenge(
+  token: string,
+  keys: KeyRing,
+): Promise<MfaChallengeClaims> {
+  const candidates = [keys.active, ...(keys.accepted ?? [])];
+  let lastError: unknown;
+
+  for (const key of candidates) {
+    try {
+      const { payload } = await jwtVerify(token, key.secret, {
+        issuer: ISSUER,
+        audience: MFA_AUDIENCE,
+        algorithms: [ALGORITHM],
+      });
+      if (typeof payload.sub !== 'string' || typeof payload['church_id'] !== 'string') {
+        throw new InvalidAccessTokenError('challenge missing sub or church_id');
+      }
+      return { sub: payload.sub, church_id: payload['church_id'] as string };
+    } catch (error) {
+      if (error instanceof InvalidAccessTokenError) throw error;
+      lastError = error;
+    }
+  }
+
+  throw new InvalidAccessTokenError(
+    lastError instanceof Error ? lastError.message : 'no key accepted the challenge',
   );
 }
