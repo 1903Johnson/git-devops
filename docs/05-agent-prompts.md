@@ -45,39 +45,15 @@ needs-owner:claude issue instead of guessing.
 
 ## INF-004 — Local development environment
 
-*Sprint 0 · Codex · depends on INF-001 (merged) · blocks nothing*
+*Sprint 0 · **completed by Claude**, not Codex*
 
-```text
-TICKET: INF-004 — Local development environment
+Reassigned in practice: the ticket's definition of done is `docker compose up -d` reaching
+healthy, and the Codex sandbox has no Docker daemon. An agent that cannot run the thing it
+is building can only write a plausible-looking compose file, which is the shape of work
+most likely to be wrong in ways review does not catch.
 
-Goal
-One command brings up every backing service the platform needs locally, on the same
-versions CI uses, so both agents and any human developer get identical behaviour.
-
-Files you own (create these; touch nothing else)
-  docker-compose.yml
-  .env.example
-  docs/local-development.md
-
-Scope
-- PostgreSQL and Redis — read .github/workflows/ci.yml and match the versions it pins.
-  Do not pick your own; drift between local and CI is the bug this ticket prevents.
-- MinIO (S3-compatible object storage) and Mailpit (SMTP capture), local-only.
-- Named volumes for persistence, a healthcheck on every service, and a compose project
-  name so the stack does not collide with other work on the same machine.
-- .env.example: every variable with a safe local default and a one-line comment. Real
-  secrets never go in it. DATABASE_URL and REDIS_URL must match the env var names the CI
-  integration job already sets.
-- docs/local-development.md: prerequisites, bring-up, teardown, resetting the database,
-  and short troubleshooting (port conflicts, stale volumes).
-
-Definition of done
-- `docker compose up -d` from a clean clone reaches healthy on every service.
-- `docker compose down -v` leaves nothing behind.
-- No application code, no migrations, no CI changes.
-```
-
----
+Delivered as `docker-compose.yml`, `.env.example`, `infra/local/init-databases.sh`, and
+[`docs/local-development.md`](local-development.md).
 
 ## DEP-001 — Dependency window for the UI stack (Claude, prerequisite)
 
