@@ -26,7 +26,7 @@ other two are stale. Change ownership here first.
 | Zone | Owner |
 |---|---|
 | `packages/contracts`, `packages/tenancy`, `packages/policy`, `packages/module-kit` | Claude |
-| `packages/testing` | Claude |
+| `packages/testing`, `packages/migrations` | Claude |
 | `apps/api` core: identity, church, audit, billing | Claude |
 | `apps/api` core: people, groups, events, attendance | Codex |
 | `modules/giving`, `modules/pastoral-care` | Claude |
