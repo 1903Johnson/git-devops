@@ -17,6 +17,7 @@ import { RequiresModule } from '../../src/common/requires-module.decorator.js';
 import { RequiresPermission } from '../../src/common/requires-permission.decorator.js';
 import { TenantInterceptor } from '../../src/common/tenant.interceptor.js';
 import { API_CONFIG, LOADED_MODULES, PG_POOL } from '../../src/common/tokens.js';
+import { AuditController } from '../../src/audit/audit.controller.js';
 import { AuthController } from '../../src/auth/auth.controller.js';
 import { AuthService } from '../../src/auth/auth.service.js';
 import { ModulesController } from '../../src/module-admin/modules.controller.js';
@@ -114,7 +115,13 @@ export async function createTestApp(): Promise<TestApp> {
   };
 
   const moduleRef = await Test.createTestingModule({
-    controllers: [ProbeController, ModuleProbeController, ModulesController, AuthController],
+    controllers: [
+      ProbeController,
+      ModuleProbeController,
+      ModulesController,
+      AuthController,
+      AuditController,
+    ],
     providers: [
       { provide: API_CONFIG, useValue: config },
       { provide: LOADED_MODULES, useFactory: () => loadModules(config.modulesDir) },

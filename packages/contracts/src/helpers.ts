@@ -27,6 +27,7 @@ export type MfaRequest = components['schemas']['MfaRequest'];
 export type RefreshRequest = components['schemas']['RefreshRequest'];
 export type TokenPair = components['schemas']['TokenPair'];
 export type CurrentUser = components['schemas']['CurrentUser'];
+export type AuditEntry = components['schemas']['AuditEntry'];
 export type PlanTier = components['schemas']['PlanTier'];
 export type ModuleStatus = components['schemas']['ModuleStatus'];
 export type ChurchModule = components['schemas']['ChurchModule'];

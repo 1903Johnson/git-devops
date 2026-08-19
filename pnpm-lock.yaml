@@ -179,6 +179,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@church/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@church/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -243,6 +246,34 @@ importers:
       unplugin-swc:
         specifier: 'catalog:'
         version: 1.5.11(@swc/core@1.16.1)(esbuild@0.28.2)(rolldown@1.2.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12))
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.2.0)(jsdom@30.0.1)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12))
+
+  packages/audit:
+    dependencies:
+      '@church/tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.0
+    devDependencies:
+      '@church/migrations':
+        specifier: workspace:*
+        version: link:../migrations
+      '@church/testing':
+        specifier: workspace:*
+        version: link:../testing
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.2.0
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
       vitest:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@26.2.0)(jsdom@30.0.1)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12))

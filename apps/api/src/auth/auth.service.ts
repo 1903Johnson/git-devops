@@ -1,9 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool } from 'pg';
 import type { CurrentUser } from '@church/contracts';
-import { IdentityService, MfaService, SessionService, mfaRequiredFor } from '@church/identity';
+import {
+  IdentityService,
+  MfaService,
+  SessionService,
+  mfaRequiredFor,
+  verifyAccessToken,
+} from '@church/identity';
 import { type Role, permissionsFor } from '@church/policy';
-import { TenantDatabase } from '@church/tenancy';
+import { AuditService } from '@church/audit';
+import { TenantDatabase, runWithTenant } from '@church/tenancy';
 import { API_CONFIG, PG_POOL } from '../common/tokens.js';
 import type { ApiConfig } from '../config.js';
 
@@ -20,11 +27,14 @@ export class AuthService {
   readonly sessions: SessionService;
   private readonly mfa: MfaService;
 
+  private readonly config: ApiConfig;
+
   constructor(
     @Inject(API_CONFIG) config: ApiConfig,
     @Inject(PG_POOL) private readonly pool: Pool,
     private readonly db: TenantDatabase,
   ) {
+    this.config = config;
     const identity = new IdentityService({ pool: this.pool, appRole: config.appRole });
     this.mfa = new MfaService({
       pool: this.pool,
@@ -38,6 +48,46 @@ export class AuthService {
       appRole: config.appRole,
       mfa: this.mfa,
     });
+  }
+
+  /**
+   * Records a successful sign-in.
+   *
+   * The tenant comes from the token that was just issued, because login runs before there
+   * is any tenant context — the church is not known until the credentials have been
+   * verified. Failures are a different problem: attributing "wrong password for
+   * someone@example.org" to a church needs a cross-tenant lookup that the login path
+   * deliberately keeps inside `@church/identity`, so failed-login auditing needs a change
+   * there and is not done here. That gap is worth closing: repeated failures against one
+   * account are what brute-force detection is built on.
+   */
+  async recordLogin(accessToken: string, requestId?: string): Promise<void> {
+    const claims = await verifyAccessToken(accessToken, this.config.keys);
+    await runWithTenant(
+      { churchId: claims.church_id, userId: claims.sub, roles: claims.roles },
+      () =>
+        this.db.transaction((tx) =>
+          new AuditService(tx).record({
+            action: 'session.started',
+            resourceType: 'session',
+            // The refresh-token family, so a session in the log can be tied to the device
+            // it belongs to and to the logout that ends it.
+            ...(claims.sid ? { resourceId: claims.sid } : {}),
+            ...(requestId ? { requestId } : {}),
+          }),
+        ),
+    );
+  }
+
+  /** The lost-phone case, recorded. Runs inside the caller's tenant context. */
+  async recordLogoutAll(sessionsEnded: number): Promise<void> {
+    await this.db.transaction((tx) =>
+      new AuditService(tx).record({
+        action: 'session.all_ended',
+        resourceType: 'session',
+        after: { sessionsEnded },
+      }),
+    );
   }
 
   /**
