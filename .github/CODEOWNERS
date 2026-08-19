@@ -1,17 +1,13 @@
-# Every path routes to the repository owner, who is reviewer of record for all work
-# produced by both agents.
+# Every path routes to the repository owner, who is reviewer of record.
 #
-# AGENTS.md §2 is the single source of truth for ownership zones. This file encodes that
-# same map as literal paths because GitHub cannot read a table; if the two ever disagree,
-# AGENTS.md is right and this file is stale. The zone comments below are NOT decoration —
-# they record which agent owns which directory. GitHub cannot enforce that split today
-# because both agents push through the same account, so the zones are enforced by the PR
-# checklist and by review, and this file exists to route the review.
+# AGENTS.md §2 is the single source of truth for the division of labour. Since the plan
+# changed, that division is no longer by directory: Claude builds everything and Codex
+# reviews what lands, so there are no per-agent zones left to encode here. The per-path
+# lines below are kept only because a future split would start from them; today every one
+# of them points at the same person, and that is accurate rather than lazy.
 #
-# When either agent gets its own GitHub identity, replace the handle on that agent's
-# lines and turn on "Require review from Code Owners" in branch protection. Note that
 # GitHub never requests review from a PR's own author, so code-owner enforcement only
-# becomes meaningful once author and owner can differ.
+# becomes meaningful once author and reviewer can differ.
 
 * @1903Johnson
 
