@@ -1,10 +1,16 @@
+import { entitlementFor } from './entitlement.js';
 import type { ModuleManifest, ModuleStatus } from './manifest.js';
 import type { QueryLike } from './registry.js';
 
 export class ModuleLifecycleError extends Error {
   constructor(
     readonly code:
-      'UNKNOWN_MODULE' | 'MISSING_REQUIREMENT' | 'REQUIRED_BY_ANOTHER' | 'INVALID_TRANSITION',
+      | 'UNKNOWN_MODULE'
+      | 'MISSING_REQUIREMENT'
+      | 'REQUIRED_BY_ANOTHER'
+      | 'INVALID_TRANSITION'
+      | 'NOT_ENTITLED'
+      | 'CONSENT_REQUIRED',
     message: string,
   ) {
     super(message);
@@ -42,7 +48,20 @@ export interface EnableOptions {
   /** The user who clicked Enable, for the audit trail. */
   readonly enabledBy?: string;
   readonly settings?: Record<string, unknown>;
+  /**
+   * The admin has seen and accepted what this module will collect.
+   *
+   * Required for any module declaring restricted data — minors', financial or pastoral
+   * records (docs/02 §3). Deriving the requirement from the declared data classes rather
+   * than from a separate manifest flag means a module that starts holding restricted data
+   * starts requiring consent in the same commit, with nothing to remember.
+   */
+  readonly acknowledgeRestrictedData?: boolean;
 }
+
+/** Whether enabling this module needs an explicit acknowledgement from the admin. */
+export const requiresConsent = (manifest: ModuleManifest): boolean =>
+  manifest.dataClasses.some((dataClass) => dataClass.sensitivity === 'restricted');
 
 /**
  * The per-tenant module state machine.
@@ -80,6 +99,26 @@ export class ModuleLifecycle {
   async enable(moduleKey: string, options: EnableOptions = {}): Promise<void> {
     const manifest = this.manifest(moduleKey);
     await this.assertTransition(moduleKey, 'enabled');
+
+    // Entitlement before anything else: a church on the wrong plan should be told that,
+    // not walked through requirement errors for a module it cannot have either way.
+    const entitlement = await entitlementFor(this.query, moduleKey);
+    if (entitlement && !entitlement.entitled) {
+      throw new ModuleLifecycleError(
+        'NOT_ENTITLED',
+        `${moduleKey} needs the ${entitlement.minPlan} plan; this church is on ${entitlement.plan}`,
+      );
+    }
+
+    if (requiresConsent(manifest) && options.acknowledgeRestrictedData !== true) {
+      throw new ModuleLifecycleError(
+        'CONSENT_REQUIRED',
+        `${moduleKey} collects restricted data (${manifest.dataClasses
+          .filter((dataClass) => dataClass.sensitivity === 'restricted')
+          .map((dataClass) => dataClass.name)
+          .join(', ')}); enabling requires an explicit acknowledgement`,
+      );
+    }
 
     for (const required of manifest.requires) {
       const status = await this.statusOf(required);

@@ -14,6 +14,7 @@ import {
 } from '@church/tenancy';
 import { InvalidAccessTokenError } from '@church/identity';
 import { ModuleNotEnabledException } from './module.guard.js';
+import { PlanUpgradeRequiredException } from './plan-upgrade.exception.js';
 import { contextOf } from './request-context.js';
 import { UndeclaredRouteError } from './policy.guard.js';
 
@@ -93,6 +94,18 @@ export function classify(exception: unknown): Classified {
       code: 'INTERNAL',
       message: 'Something went wrong',
       internal: `${exception.name}: ${exception.message}`,
+    };
+  }
+
+  if (exception instanceof PlanUpgradeRequiredException) {
+    // The message is safe to return: a church's own plan is not a secret from its own
+    // administrator, and the whole point of this code is that the client can offer an
+    // upgrade instead of a dead end.
+    return {
+      status: 403,
+      code: 'PLAN_UPGRADE_REQUIRED',
+      message: exception.message,
+      internal: exception.detail,
     };
   }
 

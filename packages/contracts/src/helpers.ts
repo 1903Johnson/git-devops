@@ -19,6 +19,10 @@ export type FamilyCreate = components['schemas']['FamilyCreate'];
 export type FamilyRelationship = components['schemas']['FamilyRelationship'];
 export type FamilyMember = components['schemas']['FamilyMember'];
 export type FamilyMemberCreate = components['schemas']['FamilyMemberCreate'];
+export type PlanTier = components['schemas']['PlanTier'];
+export type ModuleStatus = components['schemas']['ModuleStatus'];
+export type ChurchModule = components['schemas']['ChurchModule'];
+export type ModuleEnableRequest = components['schemas']['ModuleEnableRequest'];
 export type PageInfo = components['schemas']['PageInfo'];
 
 /** A page of results, matching the envelope every list endpoint returns. */

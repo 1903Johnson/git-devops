@@ -7,6 +7,7 @@ import { CORE_PERMISSIONS } from '@church/policy';
 import { TenantDatabase, currentTenant } from '@church/tenancy';
 import { type AccessTokenClaims, type KeyRing, issueAccessToken } from '@church/identity';
 import { APP_ROLE } from '@church/testing';
+import { loadModules } from '@church/module-kit';
 import { AuthGuard } from '../../src/common/auth.guard.js';
 import { ModuleGuard } from '../../src/common/module.guard.js';
 import { ErrorFilter } from '../../src/common/error.filter.js';
@@ -15,7 +16,9 @@ import { Public } from '../../src/common/public.decorator.js';
 import { RequiresModule } from '../../src/common/requires-module.decorator.js';
 import { RequiresPermission } from '../../src/common/requires-permission.decorator.js';
 import { TenantInterceptor } from '../../src/common/tenant.interceptor.js';
-import { API_CONFIG, PG_POOL } from '../../src/common/tokens.js';
+import { API_CONFIG, LOADED_MODULES, PG_POOL } from '../../src/common/tokens.js';
+import { ModulesController } from '../../src/module-admin/modules.controller.js';
+import { ModulesService } from '../../src/module-admin/modules.service.js';
 import type { ApiConfig } from '../../src/config.js';
 
 export const TEST_KEYS: KeyRing = {
@@ -108,9 +111,11 @@ export async function createTestApp(): Promise<TestApp> {
   };
 
   const moduleRef = await Test.createTestingModule({
-    controllers: [ProbeController, ModuleProbeController],
+    controllers: [ProbeController, ModuleProbeController, ModulesController],
     providers: [
       { provide: API_CONFIG, useValue: config },
+      { provide: LOADED_MODULES, useFactory: () => loadModules(config.modulesDir) },
+      ModulesService,
       { provide: PG_POOL, useValue: pool },
       {
         provide: TenantDatabase,
@@ -125,7 +130,10 @@ export async function createTestApp(): Promise<TestApp> {
   }).compile();
 
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
-    logger: false,
+    // Quiet by default; TEST_LOGS=1 turns Nest's logger back on. Without it a handler that
+    // 500s in a test reports only the status, and the ErrorFilter's whole job is to keep
+    // the cause out of the response body.
+    ...(process.env.TEST_LOGS ? {} : { logger: false as const }),
   });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

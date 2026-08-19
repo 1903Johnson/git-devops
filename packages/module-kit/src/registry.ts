@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import type { ModuleManifest, ModuleStatus } from './manifest.js';
+import { PLAN_ORDER } from './entitlement.js';
 
 export interface SyncResult {
   readonly inserted: string[];
@@ -90,10 +91,32 @@ export class ModuleStateReader {
   constructor(private readonly query: QueryLike) {}
 
   /**
-   * A module is reachable only when it is explicitly `enabled`. Absent, disabled,
-   * pending_purge and purged all mean no: an unknown key is indistinguishable from a
-   * disabled one by design, so probing cannot enumerate what a deployment supports.
+   * Whether a module may actually serve this tenant right now: enabled **and** entitled.
+   *
+   * Both halves, in one query, because docs/01 §5 says a module runs only when both are
+   * true. Checking enablement alone would leave a downgraded church still using a module
+   * its plan no longer covers until Billing got round to switching it off — the invariant
+   * would depend on a background job remembering, rather than being true by construction.
+   *
+   * Absent, disabled, pending_purge, purged and unentitled all mean no. An unknown key is
+   * indistinguishable from a disabled one by design, so probing cannot enumerate what a
+   * deployment supports.
    */
+  async isAvailable(moduleKey: string): Promise<boolean> {
+    const { rows } = await this.query.query<{ available: boolean }>(
+      `SELECT (cm.status = 'enabled') AS available
+         FROM church_module cm
+         JOIN module_definition d ON d.key = cm.module_key
+         JOIN church c ON c.id = cm.church_id
+        WHERE cm.module_key = $1
+          AND cm.church_id = current_setting('app.current_church_id', true)::uuid
+          AND array_position($2::text[], c.plan) >= array_position($2::text[], d.min_plan)`,
+      [moduleKey, PLAN_ORDER as unknown as string[]],
+    );
+    return rows[0]?.available === true;
+  }
+
+  /** Enablement alone, ignoring entitlement. For admin screens that must show a locked state. */
   async isEnabled(moduleKey: string): Promise<boolean> {
     const { rows } = await this.query.query<{ status: ModuleStatus }>(
       'SELECT status FROM church_module WHERE module_key = $1',
@@ -112,6 +135,22 @@ export class ModuleStateReader {
     return row
       ? { moduleKey: row.module_key, status: row.status, settings: row.settings }
       : undefined;
+  }
+
+  /** Enabled and entitled, which is what a nav payload should be built from. */
+  async availableKeys(): Promise<string[]> {
+    const { rows } = await this.query.query<{ module_key: string }>(
+      `SELECT cm.module_key
+         FROM church_module cm
+         JOIN module_definition d ON d.key = cm.module_key
+         JOIN church c ON c.id = cm.church_id
+        WHERE cm.status = 'enabled'
+          AND cm.church_id = current_setting('app.current_church_id', true)::uuid
+          AND array_position($1::text[], c.plan) >= array_position($1::text[], d.min_plan)
+        ORDER BY cm.module_key`,
+      [PLAN_ORDER as unknown as string[]],
+    );
+    return rows.map((row) => row.module_key);
   }
 
   async enabledKeys(): Promise<string[]> {

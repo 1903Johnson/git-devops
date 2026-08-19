@@ -56,7 +56,7 @@ shell and people/church CRUD in parallel.
 | CORE-020 ⛓ 🔒 | `packages/policy`: RBAC + resource-scoped policy engine, `@RequiresPermission()` | **C** |
 | CORE-021 🔒 | Audit service: append-only log, before/after diff, queryable by church admin | **C** |
 | CORE-022 ⛓ | **Module registry**: manifest loader, `module_definition` / `church_module`, `ModuleGuard`, 404 `MODULE_NOT_ENABLED` | **C** |
-| CORE-023 | Module enable/disable **API** + entitlement check against plan (state machine landed in CORE-022) | **C** |
+| CORE-023 | Module enable/disable API + entitlement check against plan | **C** |
 | CORE-024 | Module purge job + scheduler + purge audit records | **C** |
 | CORE-025 | `GET /me/modules` — enabled modules, nav, settings payload | **C** |
 | CORE-026 | Groups & Ministries module (core) | **X** |
@@ -76,7 +76,7 @@ shell and people/church CRUD in parallel.
 | CORE-030 🔒 | Communications: provider abstraction (Twilio/SES), `CommunicationPreference`, opt-in/opt-out, transactional vs. bulk split | **C** |
 | CORE-031 | Audience segmentation query builder for comms | **C** |
 | CORE-032 | Notification worker: push/SMS/email consumers, bounce/complaint feedback into preferences | **C** |
-| CORE-033 | Billing: Plan/Subscription model, Stripe Billing integration, trial → paid, entitlement sync to module registry | **C** 🔒 |
+| CORE-033 | Billing: Plan/Subscription model, Stripe Billing integration, trial → paid, entitlement sync into `church.plan` (added in CORE-023) | **C** 🔒 |
 | MOB-030 | Member mobile app shell: auth, module-aware nav, directory, events | **X** |
 | DOC-030 | Module authoring guide, written from the prayer-wall experience | **X** |
 

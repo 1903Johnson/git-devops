@@ -45,9 +45,12 @@ beforeEach(async () => {
   // A real church row and a real tenant context: church_module is RLS-scoped, so a
   // lifecycle running without one would silently do nothing at all.
   await client.query('DELETE FROM church WHERE id = $1', [church]);
-  await client.query(`INSERT INTO church (id, name, country) VALUES ($1, 'lifecycle', 'US')`, [
-    church,
-  ]);
+  // ENTERPRISE so plan entitlement is not what these tests are exercising; the entitlement
+  // rules have their own suite.
+  await client.query(
+    `INSERT INTO church (id, name, country, plan) VALUES ($1, 'lifecycle', 'US', 'ENTERPRISE')`,
+    [church],
+  );
   await client.query(`SET app.current_church_id = '${church}'`);
 });
 
@@ -69,18 +72,17 @@ describe('enable', () => {
     // A module running against a missing dependency fails deep inside a request, long
     // after the admin who caused it has closed the tab.
     const lifecycle = lifecycleFor();
+    const enabling = () => lifecycle.enable('needs_good', { acknowledgeRestrictedData: true });
     // Asserting the class as well as the code: toMatchObject alone would be satisfied by
     // any object carrying that string, including one thrown by something unrelated.
-    await expect(lifecycle.enable('needs_good')).rejects.toBeInstanceOf(ModuleLifecycleError);
-    await expect(lifecycle.enable('needs_good')).rejects.toMatchObject({
-      code: 'MISSING_REQUIREMENT',
-    });
+    await expect(enabling()).rejects.toBeInstanceOf(ModuleLifecycleError);
+    await expect(enabling()).rejects.toMatchObject({ code: 'MISSING_REQUIREMENT' });
   });
 
   it('allows it once the requirement is on', async () => {
     const lifecycle = lifecycleFor();
     await lifecycle.enable('good_module');
-    await lifecycle.enable('needs_good');
+    await lifecycle.enable('needs_good', { acknowledgeRestrictedData: true });
     expect(await lifecycle.statusOf('needs_good')).toBe('enabled');
   });
 
@@ -118,7 +120,7 @@ describe('disable', () => {
   it('refuses while an enabled module still requires it', async () => {
     const lifecycle = lifecycleFor();
     await lifecycle.enable('good_module');
-    await lifecycle.enable('needs_good');
+    await lifecycle.enable('needs_good', { acknowledgeRestrictedData: true });
     await expect(lifecycle.disable('good_module')).rejects.toMatchObject({
       code: 'REQUIRED_BY_ANOTHER',
     });
@@ -127,7 +129,7 @@ describe('disable', () => {
   it('allows it once the dependent is off', async () => {
     const lifecycle = lifecycleFor();
     await lifecycle.enable('good_module');
-    await lifecycle.enable('needs_good');
+    await lifecycle.enable('needs_good', { acknowledgeRestrictedData: true });
     await lifecycle.disable('needs_good');
     await lifecycle.disable('good_module');
     expect(await lifecycle.statusOf('good_module')).toBe('disabled');
