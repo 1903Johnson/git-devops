@@ -196,7 +196,8 @@ Route a new ticket to **Claude** if any of these are true:
 - it is infrastructure, CI, release, or DR.
 
 Codex is not a route any more. Every ticket is Claude's, and Codex reviews what lands —
-see §"The review loop" below and `docs/05-agent-prompts.md` for the standing brief.
+see §"The review loop" below and [docs/tasks/SEC-REVIEW.md](tasks/SEC-REVIEW.md) for the
+standing brief.
 
 **Two consequences worth stating.** The critical path is now the only path, so the plan is
 longer in wall-clock terms and the sprint boundaries are softer. And the quality bar stops
