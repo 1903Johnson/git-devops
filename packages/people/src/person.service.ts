@@ -8,7 +8,7 @@ import type {
 } from '@church/contracts';
 import { AuditService } from '@church/audit';
 import { type Page, decodeCursor, encodeCursor } from '@church/church';
-import { CORE_PERMISSIONS, type Subject, assertCan } from '@church/policy';
+import { CORE_PERMISSIONS, type Subject, assertCan, campusScopeOf } from '@church/policy';
 import { TenantRepository, type TenantTransaction, currentTenant } from '@church/tenancy';
 import {
   type MilestoneRow,
@@ -66,6 +66,24 @@ export class PersonService {
     const limit = Math.min(options.limit ?? PERSON_PAGE_SIZE.default, PERSON_PAGE_SIZE.max);
     const after = decodeCursor(options.cursor);
 
+    // A campus admin's confinement has to be applied here, because the engine compares one
+    // resource at a time and a listing presents it none — so without this the broad
+    // `person:read` check above is the only thing standing between them and every record
+    // in the church, which is not what the role means.
+    //
+    // Naming someone else's campus is refused rather than quietly narrowed: silently
+    // returning their own campus would answer a question they did not ask and hide that
+    // they were denied.
+    const confinedTo = campusScopeOf(subject);
+    if (confinedTo && options.campusId && options.campusId !== confinedTo) {
+      assertCan(subject, CORE_PERMISSIONS.person_read, {
+        type: 'person',
+        churchId: subject.churchId,
+        campusId: options.campusId,
+      });
+    }
+    const campusId = confinedTo ?? options.campusId;
+
     const where: string[] = [];
     const values: unknown[] = [limit + 1];
     const add = (clause: string, value: unknown) => {
@@ -75,7 +93,7 @@ export class PersonService {
 
     if (options.includeArchived !== true) where.push('archived_at IS NULL');
     if (options.status) add('status = ?', options.status);
-    if (options.campusId) add('campus_id = ?', options.campusId);
+    if (campusId) add('campus_id = ?', campusId);
     if (after) {
       values.push(after.name, after.id);
       where.push(`(lower(last_name), id) > ($${values.length - 1}, $${values.length})`);
@@ -115,11 +133,19 @@ export class PersonService {
   }
 
   async create(tx: TenantTransaction, subject: Subject, input: PersonCreate): Promise<Person> {
-    assertCan(subject, CORE_PERMISSIONS.person_manage);
+    // A campus admin creating a person with no campus named gets their own, rather than an
+    // unassigned record they would immediately be unable to see. Naming another campus is
+    // a write outside their reach and is refused.
+    const campusId = input.campusId ?? campusScopeOf(subject) ?? null;
+    assertCan(subject, CORE_PERMISSIONS.person_manage, {
+      type: 'person',
+      churchId: subject.churchId,
+      ...(campusId ? { campusId } : {}),
+    });
     const { userId } = currentTenant('PersonService.create');
 
     const row = await this.repository.insert(tx, {
-      campus_id: input.campusId ?? null,
+      campus_id: campusId,
       first_name: input.firstName,
       last_name: input.lastName,
       preferred_name: input.preferredName ?? null,
@@ -170,7 +196,18 @@ export class PersonService {
       type: 'person',
       churchId: before.churchId,
       personId,
+      ...(before.campusId ? { campusId: before.campusId } : {}),
     });
+
+    // Moving a record is a write to where it lands as well as where it left, and only the
+    // first of those is the record we just checked.
+    if (changes.campusId != null && changes.campusId !== before.campusId) {
+      assertCan(subject, CORE_PERMISSIONS.person_manage, {
+        type: 'person',
+        churchId: before.churchId,
+        campusId: changes.campusId,
+      });
+    }
 
     const patch: Record<string, unknown> = {};
     const set = (column: string, value: unknown) => {
@@ -311,7 +348,19 @@ export class PersonService {
       type: 'person',
       churchId: person.churchId,
       personId,
+      ...(person.campusId ? { campusId: person.campusId } : {}),
     });
+
+    // A milestone carries its own campus — where the baptism happened, not where the
+    // person is filed — so it needs checking in its own right.
+    const milestoneCampus = input.campusId ?? campusScopeOf(subject) ?? null;
+    if (milestoneCampus && milestoneCampus !== person.campusId) {
+      assertCan(subject, CORE_PERMISSIONS.person_manage, {
+        type: 'person',
+        churchId: person.churchId,
+        campusId: milestoneCampus,
+      });
+    }
 
     const { churchId } = currentTenant('PersonService.recordMilestone');
     const { rows } = await tx.query<MilestoneRow>(
@@ -320,7 +369,7 @@ export class PersonService {
       [
         churchId,
         personId,
-        input.campusId ?? null,
+        milestoneCampus,
         input.type,
         input.occurredOn,
         input.officiant ?? null,

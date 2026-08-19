@@ -1,6 +1,12 @@
 import type { Campus, CampusCreate, CampusUpdate, Church, ChurchUpdate } from '@church/contracts';
 import { AuditService } from '@church/audit';
-import { CORE_PERMISSIONS, type Subject, assertCan } from '@church/policy';
+import {
+  CORE_PERMISSIONS,
+  ForbiddenError,
+  type Subject,
+  assertCan,
+  campusScopeOf,
+} from '@church/policy';
 import { TenantRepository, currentTenant, type TenantTransaction } from '@church/tenancy';
 import { decodeCursor, encodeCursor } from './cursor.js';
 
@@ -176,6 +182,20 @@ export class CampusService {
 
   async create(tx: TenantTransaction, subject: Subject, input: CampusCreate): Promise<Campus> {
     assertCan(subject, CORE_PERMISSIONS.campus_manage);
+
+    // A campus that does not exist yet has no id for the engine's campus rule to compare
+    // against, so this is the one campus operation it cannot decide. Updating and removing
+    // are already confined — both read the row first, and that read is scoped — but
+    // creating would otherwise let an administrator trusted with one site add another and
+    // then not administer it. Opening a site is a church-wide act.
+    if (campusScopeOf(subject)) {
+      throw new ForbiddenError(CORE_PERMISSIONS.campus_manage, {
+        allowed: false,
+        rule: 'campus_scope',
+        detail: 'a new campus',
+      });
+    }
+
     const row = await this.repository.insert(tx, {
       name: input.name,
       timezone: input.timezone ?? null,

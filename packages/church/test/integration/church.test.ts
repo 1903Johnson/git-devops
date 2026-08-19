@@ -268,3 +268,56 @@ describe('paging campuses', () => {
     expect(page.data.map((campus) => campus.name)).toEqual(['Alpha', 'Bravo']);
   });
 });
+
+describe('a campus admin over campuses', () => {
+  // CAMPUS_ADMIN carries campus:manage, but confined to one site. The engine enforces that
+  // by comparing a resource's campus against the subject's, which works for every
+  // operation that reads a row first — and not for the one that does not.
+  const campusAdmin = (campusId: string): Subject => ({
+    userId: u1,
+    churchId: church,
+    roles: ['CAMPUS_ADMIN'],
+    campusId,
+  });
+
+  it('cannot open a new campus', async () => {
+    const mine = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'North' }));
+    await expect(
+      asTenant((tx) => campuses.create(tx, campusAdmin(mine.id), { name: 'Land Grab' })),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('cannot rename a campus that is not theirs', async () => {
+    const mine = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'North' }));
+    const theirs = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'South' }));
+    await expect(
+      asTenant((tx) => campuses.update(tx, campusAdmin(mine.id), theirs.id, { name: 'Mine Now' })),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('cannot remove a campus that is not theirs', async () => {
+    const mine = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'North' }));
+    const theirs = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'South' }));
+    await expect(
+      asTenant((tx) => campuses.remove(tx, campusAdmin(mine.id), theirs.id)),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('can still rename their own', async () => {
+    const mine = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'North' }));
+    const renamed = await asTenant((tx) =>
+      campuses.update(tx, campusAdmin(mine.id), mine.id, { name: 'North Site' }),
+    );
+    expect(renamed.name).toBe('North Site');
+  });
+
+  it('still sees the whole list, which is deliberate', async () => {
+    // Campus names and timezones are not sensitive, and an admin who cannot see the
+    // church's structure cannot navigate the product. Confinement is about the records
+    // inside a campus, not the existence of the others.
+    const mine = await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'North' }));
+    await asTenant((tx) => campuses.create(tx, churchAdmin, { name: 'South' }));
+    const page = await asTenant((tx) => campuses.list(tx, campusAdmin(mine.id), { limit: 50 }));
+    expect(page.data.map((c) => c.name).sort()).toEqual(['Main', 'North', 'South']);
+  });
+});

@@ -41,6 +41,25 @@ Not decoration. The audit log (CORE-021) records *why* access was granted, and a
    them on their own campus. `campus_id` is a scoping filter, never an isolation boundary
    (`docs/01` §2.3), so **RLS will not catch this** — the engine is the only thing standing
    in the way. Holding any church-wide role lifts the restriction.
+
+   **The rule is opt-in, and that is its sharp edge.** It compares `resource.campusId`
+   against the subject's, so a caller that passes no resource — or one without a campus —
+   is not scoped at all, and nothing says so. That is not a hypothetical: it is how a
+   campus admin came to be able to list every person in the church (REV-002). Two kinds of
+   caller have to do the work themselves, because the engine cannot:
+
+   - **Anything returning a set.** A listing has no single campus to compare, so the query
+     must narrow itself. `campusScopeOf(subject)` returns the campus a subject is confined
+     to, or `undefined` when their reach is church-wide; it is exported precisely so the
+     filter and the rule cannot drift into disagreeing about who is confined.
+   - **Anything creating a row, or moving one between campuses.** A new row has no id yet,
+     and a move is a write to the destination as well as the source — the engine only ever
+     sees the resource it is handed, so both campuses have to be checked explicitly.
+
+   Not every entity can be scoped this way. `family` and `family_member` carry no
+   `campus_id` at all, so a household cannot currently be confined to a campus; a family
+   whose members span two sites has no single answer. That is a modelling decision nobody
+   has made yet, not an oversight to patch quietly — see `docs/04`, REV-002.
 5. **Group leadership** — `group:manage` from `GROUP_LEADER` reaches only groups they
    actually lead. Staff and above hold it church-wide. This is the case `docs/01` §2.5
    calls out: the permission is real, its reach is not global.

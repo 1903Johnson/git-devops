@@ -65,6 +65,27 @@ const SELF_PERMISSIONS: Record<string, string> = {
 };
 
 /**
+ * The campus a subject is confined to, or `undefined` when their reach is church-wide.
+ *
+ * Exported because the rule below cannot cover every case on its own: it compares one
+ * resource against the subject, and a collection has no single campus to compare. A
+ * caller returning a *set* of rows has to narrow the query itself, and this is the
+ * predicate it must narrow by — shared from here so the two answers cannot drift into
+ * disagreeing about who is confined.
+ *
+ * A subject holding any church-wide role is not confined, even alongside a campus-scoped
+ * one: the broader role is the one they were given deliberately.
+ */
+export function campusScopeOf(subject: Subject): string | undefined {
+  const campusScoped = subject.roles.some((role) => CAMPUS_SCOPED_ROLES.includes(role));
+  if (!campusScoped || !subject.campusId) return undefined;
+  const churchWide = subject.roles.some(
+    (role) => !CAMPUS_SCOPED_ROLES.includes(role) && role !== 'MEMBER' && role !== 'VOLUNTEER',
+  );
+  return churchWide ? undefined : subject.campusId;
+}
+
+/**
  * Decides whether `subject` may perform `permission`, optionally on `resource`.
  *
  * Deny by default: every path that is not an explicit allow returns a denial. Order
@@ -101,14 +122,9 @@ export function can(subject: Subject, permission: Permission, resource?: Resourc
   // 4. Campus scoping. A campus admin holds church-wide permissions but may only exercise
   //    them on their own campus; campus_id is a scoping filter, never an isolation
   //    boundary (docs/01 §2.3), which is why this is enforced here and not by RLS.
-  const campusScoped = subject.roles.some((role) => CAMPUS_SCOPED_ROLES.includes(role));
-  const churchWide = subject.roles.some(
-    (role) => !CAMPUS_SCOPED_ROLES.includes(role) && role !== 'MEMBER' && role !== 'VOLUNTEER',
-  );
-  if (campusScoped && !churchWide && subject.campusId && resource?.campusId) {
-    if (resource.campusId !== subject.campusId) {
-      return { allowed: false, rule: 'campus_scope', detail: resource.campusId };
-    }
+  const confinedTo = campusScopeOf(subject);
+  if (confinedTo && resource?.campusId && resource.campusId !== confinedTo) {
+    return { allowed: false, rule: 'campus_scope', detail: resource.campusId };
   }
 
   // 5. Group leadership. `group:manage` from the GROUP_LEADER role reaches only the groups
