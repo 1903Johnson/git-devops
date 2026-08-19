@@ -445,6 +445,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/churches/{churchId}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The church's audit log
+         * @description Append-only and readable by the church's own administrators — a church can see who
+         *     did what inside it, without asking the platform operator. Most recent first.
+         *
+         *     Paginated by `seq` rather than by offset or timestamp: the log grows at the head, so
+         *     an offset shifts under a reader between pages, and entries written in one
+         *     transaction share a timestamp exactly.
+         */
+        get: operations["listAuditEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -924,6 +951,51 @@ export interface components {
              *     means the client should route them into enrolment.
              */
             mfaRequired: boolean;
+        };
+        /**
+         * @description One line of history. Immutable: the application role holds SELECT and INSERT on this
+         *     table and nothing else, so no request this platform serves can rewrite or erase one.
+         */
+        AuditEntry: {
+            /** Format: uuid */
+            id: string;
+            /** @description Total order across the log, and the pagination cursor. */
+            seq: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /**
+             * Format: uuid
+             * @description Null for actions the platform took by itself — a scheduled purge, a downgrade
+             *     applied by billing. Null means "no human", never "we did not record who".
+             */
+            actorUserId?: string | null;
+            /**
+             * @description The roles held at the time. A snapshot rather than a join, because the
+             *     assignment may have changed since and a line must say what was true then.
+             */
+            actorRoles: string[];
+            /** @description Dotted and past tense — `module.enabled`, `person.updated`. */
+            action: string;
+            resourceType: string;
+            resourceId?: string | null;
+            /** Format: uuid */
+            campusId?: string | null;
+            /** @enum {string} */
+            sensitivity: "standard" | "restricted";
+            /**
+             * @description State before the change; absent for a read. Secret-looking fields are replaced
+             *     with a marker before storage — the fact that a credential changed is visible,
+             *     its value never is.
+             */
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+            changedFields: string[];
+            reason?: string | null;
+            requestId?: string | null;
         };
     };
     responses: {
@@ -1909,6 +1981,49 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listAuditEntries: {
+        parameters: {
+            query?: {
+                action?: string;
+                resourceType?: string;
+                resourceId?: string;
+                actorUserId?: string;
+                /**
+                 * @description `restricted` narrows to accesses of the classes that require an access record —
+                 *     medical notes, pastoral records, giving. Usually where an investigation starts.
+                 */
+                sensitivity?: "standard" | "restricted";
+                since?: string;
+                until?: string;
+                /** @description Cursor — the `seq` of the last entry on the previous page. */
+                beforeSeq?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of audit entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AuditEntry"][];
+                        /** @description Present when the page was full; pass as `beforeSeq`. */
+                        nextCursor?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
 }

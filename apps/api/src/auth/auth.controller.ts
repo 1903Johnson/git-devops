@@ -46,7 +46,9 @@ export class AuthController {
     if (!body?.email || !body?.password)
       throw new BadRequestException('email and password are required');
     const result = await this.auth.sessions.login(body.email, body.password, body.deviceLabel);
-    return this.presentSession(result, reply);
+    const presented = this.presentSession(result, reply);
+    await this.auditLogin(presented);
+    return presented;
   }
 
   @Public()
@@ -56,7 +58,9 @@ export class AuthController {
     if (!body?.challenge || !body?.code)
       throw new BadRequestException('challenge and code are required');
     const result = await this.auth.sessions.completeMfa(body.challenge, body.code);
-    return this.presentSession(result, reply);
+    const presented = this.presentSession(result, reply);
+    await this.auditLogin(presented);
+    return presented;
   }
 
   @Public()
@@ -91,7 +95,9 @@ export class AuthController {
   async logoutAll(): Promise<{ sessionsEnded: number }> {
     const { churchId, userId } = currentTenant();
     if (!userId) throw new UnauthorizedException('No authenticated user');
-    return { sessionsEnded: await this.auth.sessions.logoutAllDevices(churchId, userId) };
+    const sessionsEnded = await this.auth.sessions.logoutAllDevices(churchId, userId);
+    await this.auth.recordLogoutAll(sessionsEnded);
+    return { sessionsEnded };
   }
 
   @Authenticated()
@@ -110,6 +116,18 @@ export class AuthController {
    * One place to turn a `SessionResult` into a response, so login and MFA completion
    * cannot drift apart in what they disclose.
    */
+  /**
+   * Records a sign-in after the response shape is settled, so an audit failure cannot turn
+   * a successful login into an error the user sees. The entry and the token are not atomic
+   * here — they cannot be, since the tokens are issued before the tenant is known — which
+   * is exactly why this is the one audit call in the codebase that is not inside the
+   * transaction doing the work.
+   */
+  private async auditLogin(result: LoginResult): Promise<void> {
+    if (result.status !== 'success') return;
+    await this.auth.recordLogin(result.tokens.accessToken);
+  }
+
   private presentSession(result: SessionResult, reply: FastifyReply): LoginResult {
     switch (result.status) {
       case 'success':

@@ -12,6 +12,7 @@
     "test:isolation": "vitest run test/isolation"
   },
   "dependencies": {
+    "@church/audit": "workspace:*",
     "@church/contracts": "workspace:*",
     "@church/identity": "workspace:*",
     "@church/module-kit": "workspace:*",

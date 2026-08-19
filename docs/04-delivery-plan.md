@@ -56,6 +56,7 @@ shell and people/church CRUD in parallel.
 |---|---|---|
 | CORE-020 ⛓ 🔒 | `packages/policy`: RBAC + resource-scoped policy engine, `@RequiresPermission()` | **C** |
 | CORE-021 🔒 | Audit service: append-only log, before/after diff, queryable by church admin | **C** |
+| CORE-021a 🔒 | Audit failed logins — needs `@church/identity` to attribute a known-user failure to its church | **C** |
 | CORE-022 ⛓ | **Module registry**: manifest loader, `module_definition` / `church_module`, `ModuleGuard`, 404 `MODULE_NOT_ENABLED` | **C** |
 | CORE-023 | Module enable/disable API + entitlement check against plan | **C** |
 | CORE-024 | Module purge job + scheduler + purge audit records | **C** |

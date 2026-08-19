@@ -718,6 +718,79 @@ paths:
               schema: { $ref: '#/components/schemas/CurrentUser' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /churches/{churchId}/audit:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+    get:
+      operationId: listAuditEntries
+      tags: [Audit]
+      summary: The church's audit log
+      description: |
+        Append-only and readable by the church's own administrators — a church can see who
+        did what inside it, without asking the platform operator. Most recent first.
+
+        Paginated by `seq` rather than by offset or timestamp: the log grows at the head, so
+        an offset shifts under a reader between pages, and entries written in one
+        transaction share a timestamp exactly.
+      parameters:
+        - name: action
+          in: query
+          required: false
+          schema: { type: string }
+        - name: resourceType
+          in: query
+          required: false
+          schema: { type: string }
+        - name: resourceId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: actorUserId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: sensitivity
+          in: query
+          required: false
+          description: |
+            `restricted` narrows to accesses of the classes that require an access record —
+            medical notes, pastoral records, giving. Usually where an investigation starts.
+          schema: { type: string, enum: [standard, restricted] }
+        - name: since
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: beforeSeq
+          in: query
+          required: false
+          description: Cursor — the `seq` of the last entry on the previous page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: A page of audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  nextCursor:
+                    type: string
+                    description: Present when the page was full; pass as `beforeSeq`.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1306,6 +1379,55 @@ components:
           description: |
             Whether this user's roles oblige them to enrol. True and `mfaEnrolled` false
             means the client should route them into enrolment.
+
+    AuditEntry:
+      type: object
+      description: |
+        One line of history. Immutable: the application role holds SELECT and INSERT on this
+        table and nothing else, so no request this platform serves can rewrite or erase one.
+      required: [id, seq, occurredAt, action, resourceType, sensitivity, actorRoles, changedFields]
+      properties:
+        id: { type: string, format: uuid }
+        seq:
+          type: string
+          description: Total order across the log, and the pagination cursor.
+        occurredAt: { type: string, format: date-time }
+        actorUserId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Null for actions the platform took by itself — a scheduled purge, a downgrade
+            applied by billing. Null means "no human", never "we did not record who".
+        actorRoles:
+          type: array
+          description: |
+            The roles held at the time. A snapshot rather than a join, because the
+            assignment may have changed since and a line must say what was true then.
+          items: { type: string }
+        action:
+          type: string
+          description: Dotted and past tense — `module.enabled`, `person.updated`.
+        resourceType: { type: string }
+        resourceId: { type: [string, 'null'] }
+        campusId: { type: [string, 'null'], format: uuid }
+        sensitivity: { type: string, enum: [standard, restricted] }
+        before:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            State before the change; absent for a read. Secret-looking fields are replaced
+            with a marker before storage — the fact that a credential changed is visible,
+            its value never is.
+        after:
+          type: object
+          additionalProperties: true
+          nullable: true
+        changedFields:
+          type: array
+          items: { type: string }
+        reason: { type: [string, 'null'] }
+        requestId: { type: [string, 'null'] }
 
   responses:
     BadRequest:

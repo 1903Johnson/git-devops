@@ -8,6 +8,7 @@ import {
   entitlementFor,
   requiresConsent,
 } from '@church/module-kit';
+import { AuditService } from '@church/audit';
 import { TenantDatabase, type TenantTransaction } from '@church/tenancy';
 import { LOADED_MODULES } from '../common/tokens.js';
 
@@ -62,16 +63,54 @@ export class ModulesService {
     },
   ): Promise<ChurchModule> {
     return this.db.transaction(async (tx) => {
+      const before = await this.stateOf(tx, moduleKey);
       await this.lifecycle(tx).enable(moduleKey, options);
-      return this.readBack(tx, moduleKey);
+      const after = await this.readBack(tx, moduleKey);
+
+      // In the same transaction as the change. An entry written separately can commit while
+      // the enable rolls back, leaving a log that says a module was switched on when it was
+      // not.
+      await new AuditService(tx).record({
+        action: 'module.enabled',
+        resourceType: 'module',
+        resourceId: moduleKey,
+        before,
+        after: { status: after.status, entitled: after.entitled },
+        // Consent is the point of this record: the line that shows an administrator was
+        // told what the module collects before it started collecting it.
+        ...(options.acknowledgeRestrictedData
+          ? { reason: 'restricted-data acknowledgement given' }
+          : {}),
+      });
+      return after;
     });
   }
 
   async disable(moduleKey: string): Promise<ChurchModule> {
     return this.db.transaction(async (tx) => {
+      const before = await this.stateOf(tx, moduleKey);
       await this.lifecycle(tx).disable(moduleKey);
-      return this.readBack(tx, moduleKey);
+      const after = await this.readBack(tx, moduleKey);
+
+      await new AuditService(tx).record({
+        action: 'module.disabled',
+        resourceType: 'module',
+        resourceId: moduleKey,
+        before,
+        after: { status: after.status, purgeAfter: after.purgeAfter },
+      });
+      return after;
     });
+  }
+
+  /** The stored state, for the `before` half of an audit entry. */
+  private async stateOf(
+    tx: TenantTransaction,
+    moduleKey: string,
+  ): Promise<Record<string, unknown>> {
+    const state = (await this.statesByKey(tx)).get(moduleKey);
+    // No row is the same thing as off, and the log should say so rather than say nothing.
+    return { status: state?.status ?? 'disabled' };
   }
 
   private lifecycle(tx: TenantTransaction): ModuleLifecycle {
