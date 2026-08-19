@@ -40,6 +40,7 @@ Legend: **C** Claude · **X** Codex · ⛓ blocks the other agent · 🔒 securi
 | CORE-016 | Church & Campus services (`@church/church`) — HTTP layer deferred until `apps/api` exists | **X** |
 | CORE-017a ⛓ 🔒 | People/family contract + migration: OpenAPI shapes, RLS, tenant-carrying foreign keys | **C** |
 | CORE-017 | Person & Family services, membership status history, milestones (against CORE-017a) | **X** |
+| CORE-018 ⛓ 🔒 | `apps/api` scaffold: NestJS + Fastify, auth → policy → tenant → error-envelope lifecycle | **C** |
 | WEB-010 | Admin web shell: routing, auth flow against CORE-013/014, layout, nav-from-API stub | **X** |
 
 Claude is the bottleneck this sprint by design — tenancy and auth must be right before

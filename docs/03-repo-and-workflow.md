@@ -9,7 +9,7 @@ How Claude and Codex build this repo at the same time without stepping on each o
 ```
 /
 ├── apps/
-│   ├── api/                  # NestJS modular monolith (core only)
+│   ├── api/                  # NestJS modular monolith (core only) — lifecycle in its README
 │   ├── worker/               # queue consumers, scheduled jobs
 │   ├── admin-web/            # Next.js pastor/admin app
 │   ├── member-mobile/        # React Native member app
@@ -139,6 +139,12 @@ ci          → aggregating gate; the single required status check for branch pr
 `quality`, `integration`, and `security` are gated on the presence of `package.json` and
 report *skipped* until Sprint 0 lands the workspace — a gated job is honest, a job whose
 steps silently no-op is a false green.
+
+For the same reason the two mandatory suites are asserted from the point their subject
+exists, each keyed on that subject rather than on one shared milestone: `test:isolation` is
+required once `apps/api` exists, and `test:module-lifecycle` once any `modules/*` package
+does. Demanding a suite before there is anything for it to test can only be satisfied by a
+vacuous one, and a vacuous suite is worse than a missing suite — it reports green.
 
 The boundary check enforces five rules, each mapping to an invariant in
 `docs/01-architecture.md` §2 and `docs/02-module-system.md` §6:
