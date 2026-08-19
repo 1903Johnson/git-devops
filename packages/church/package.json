@@ -1,11 +1,11 @@
 {
-  "name": "@church/api",
+  "name": "@church/church",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "scripts": {
-    "dev": "node --import @swc-node/register/esm-register --watch src/main.ts",
-    "start": "node --import @swc-node/register/esm-register src/main.ts",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
@@ -13,30 +13,17 @@
   },
   "dependencies": {
     "@church/audit": "workspace:*",
-    "@church/church": "workspace:*",
     "@church/contracts": "workspace:*",
-    "@church/identity": "workspace:*",
-    "@church/module-kit": "workspace:*",
     "@church/policy": "workspace:*",
     "@church/tenancy": "workspace:*",
-    "@nestjs/common": "catalog:",
-    "@nestjs/core": "catalog:",
-    "@nestjs/platform-fastify": "catalog:",
-    "fastify": "catalog:",
-    "pg": "catalog:",
-    "reflect-metadata": "catalog:",
-    "rxjs": "catalog:"
+    "pg": "catalog:"
   },
   "devDependencies": {
     "@church/migrations": "workspace:*",
     "@church/testing": "workspace:*",
-    "@nestjs/testing": "catalog:",
-    "@swc-node/register": "catalog:",
-    "@swc/core": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "typescript": "catalog:",
-    "unplugin-swc": "catalog:",
     "vitest": "catalog:"
   }
 }

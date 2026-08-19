@@ -546,8 +546,18 @@ export interface components {
         CampusCreate: {
             name: string;
             timezone?: string;
-            /** @default false */
-            isPrimary: boolean;
+            /**
+             * @description Whether this becomes the church's primary campus, stepping the previous one
+             *     down. Omit for false.
+             *
+             *     Deliberately no `default:` here. A defaulted property is generated as
+             *     *required* in the TypeScript types — a client following this contract would
+             *     omit it, as the `required` list above says it may, and fail to compile. Defaults
+             *     on request bodies belong in the server, and in prose like this.
+             *
+             *     Response schemas may still carry `default:`, where "always present" is true.
+             */
+            isPrimary?: boolean;
         };
         CampusUpdate: {
             name?: string;
