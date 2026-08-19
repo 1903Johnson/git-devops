@@ -9,7 +9,7 @@
 // Exit:   0 = clean, 1 = violations found
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 const ROOT = process.cwd();
 
@@ -93,13 +93,31 @@ const modules = moduleDirs.map((dir) => ({
 
 const IMPORT_RE = /(?:from\s+|require\(\s*|import\(\s*)['"]([^'"]+)['"]/g;
 
+/**
+ * Whether an import reaches into `modules/` at the repository root.
+ *
+ * A relative specifier is resolved against the importing file rather than pattern-matched,
+ * because matching the text alone flags any directory named `modules` anywhere — including
+ * `apps/api/src/modules/`, which is the core code that *administers* optional modules and
+ * is precisely what C1 should permit. A rule that cannot be satisfied without renaming
+ * unrelated directories gets suppressed, and a suppressed rule protects nothing.
+ */
+function importsAModule(file, spec) {
+  if (/^@church\/mod-/.test(spec)) return true;
+  if (spec.startsWith('.')) {
+    const resolved = resolve(dirname(file), spec);
+    return resolved === MODULES_DIR || resolved.startsWith(`${MODULES_DIR}/`);
+  }
+  return /(^|\/)modules\//.test(spec);
+}
+
 for (const root of CORE_ROOTS) {
   for (const file of walk(join(ROOT, root))) {
     if (!CODE_EXT.has(file.slice(file.lastIndexOf('.')))) continue;
     if (isExempt(file, CORE_EXEMPT)) continue;
     eachLine(file, (text, line) => {
       for (const [, spec] of text.matchAll(IMPORT_RE)) {
-        if (/(^|\/)modules\//.test(spec) || /^@church\/mod-/.test(spec)) {
+        if (importsAModule(file, spec)) {
           report('C1', rel(file), line, `core imports from an optional module: "${spec}"`);
         }
       }

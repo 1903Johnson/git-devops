@@ -74,6 +74,39 @@ that could diverge from it would leave two answers to "what does this module hol
 rule for which wins. A definition whose module has gone is reported, never deleted — a
 church may still hold its data, and `church_module` references the row.
 
+## Entitlement vs enablement
+
+Two different questions with two different remedies (docs/01 §5):
+
+- **Entitled** — does this church's plan cover the module? `church.plan` against
+  `module_definition.min_plan`.
+- **Enabled** — has an admin turned it on? `church_module.status`.
+
+A module runs only when both are true, and `ModuleStateReader.isAvailable` answers that in
+one query. Checking enablement alone would leave a downgraded church using a module its
+plan no longer covers until Billing got round to switching it off — the invariant would
+depend on a background job remembering, rather than being true by construction.
+
+Losing entitlement never changes stored state. The row still says `enabled`, the data is
+untouched, and re-upgrading restores the module with nobody re-enabling anything. A
+downgrade must never delete.
+
+`church.plan` is a single column rather than a subscription table. Billing (CORE-033) owns
+subscriptions, Stripe, trials and proration, and will drive this column from them — at
+which point it is a denormalised projection, which is what the check wants anyway: one
+value on a row the query is already reading.
+
+## Consent
+
+Enabling a module that declares **restricted** data requires an explicit
+`acknowledgeRestrictedData`. The requirement is derived from the declared data classes
+rather than a separate manifest flag, so a module that starts collecting restricted data
+starts requiring consent in the same commit, with nothing to remember.
+
+The acknowledgement can obviously be sent blindly by a script; that is what the audit trail
+is for. The point is that no church starts collecting minors' or pastoral data because
+someone flipped a toggle with no prompt.
+
 ## Lifecycle
 
 `ModuleLifecycle` owns the state machine in docs/02 §3: which transitions are legal, that
@@ -85,9 +118,12 @@ enabled ──disable──▶ disabled ──grace──▶ pending_purge ─�
    └────────enable──────┴──────────────────────┘   (re-enabling stops the clock)
 ```
 
-It deliberately does **not** own plan entitlement (CORE-023) or the purge job itself
-(CORE-024). This class decides whether a transition is coherent — not whether the church
-has paid for it, and not what happens to the rows afterwards.
+It checks entitlement and consent as preconditions on `enable`, and reports entitlement
+first — a church on the wrong plan should be told that, not walked through requirement
+errors for a module it cannot have either way.
+
+It deliberately does **not** own the purge job (CORE-024): this class decides whether a
+transition is coherent, not what happens to the rows afterwards.
 
 Every method runs inside a tenant context. Without one, RLS returns nothing rather than
 everything: the safe direction, but still a bug, so callers establish the context.

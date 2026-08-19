@@ -230,6 +230,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/churches/{churchId}/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Every module this deployment offers, with this church's state
+         * @description The administrator's view: the whole catalogue, each entry saying whether the plan
+         *     covers it and whether it is switched on. Unlike `GET /me/modules`, this deliberately
+         *     includes modules the church cannot have — that is what makes an upgrade path
+         *     visible.
+         */
+        get: operations["listChurchModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/churches/{churchId}/modules/{moduleKey}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+                /** @description The module's manifest key, e.g. `prayer_wall`. */
+                moduleKey: components["parameters"]["ModuleKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn a module on for this church
+         * @description An action rather than a status field, because enabling has preconditions that a
+         *     PATCH would have to smuggle into a validation error: the plan must cover it, every
+         *     module it requires must already be on, and a module collecting restricted data
+         *     needs an explicit acknowledgement.
+         */
+        post: operations["enableModule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/churches/{churchId}/modules/{moduleKey}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+                /** @description The module's manifest key, e.g. `prayer_wall`. */
+                moduleKey: components["parameters"]["ModuleKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn a module off for this church
+         * @description Withdraws access, never data. Routes stop answering and navigation stops showing it
+         *     immediately; the module's records are retained for its declared grace period, and
+         *     re-enabling within that window restores everything and stops the clock.
+         */
+        post: operations["disableModule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -240,9 +318,14 @@ export interface components {
              *     `MODULE_NOT_ENABLED` is returned as 404 rather than 403 on purpose: a 403 would
              *     tell a caller that a module exists for a tenant that has not enabled it
              *     (docs/01 §3).
+             *
+             *     `PLAN_UPGRADE_REQUIRED` is separate from `FORBIDDEN` because the two need
+             *     different screens: one is "ask your administrator for access", the other is
+             *     "your plan does not include this". Collapsing them would make the upgrade path
+             *     unreachable from the UI.
              * @enum {string}
              */
-            code: "BAD_REQUEST" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "MODULE_NOT_ENABLED" | "CONFLICT" | "RATE_LIMITED" | "INTERNAL";
+            code: "BAD_REQUEST" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "MODULE_NOT_ENABLED" | "PLAN_UPGRADE_REQUIRED" | "CONFLICT" | "RATE_LIMITED" | "INTERNAL";
             /** @description Human-readable summary. Never parsed by clients, never shown raw to members. */
             message: string;
             /** @description Field-level problems, for form display. */
@@ -550,6 +633,69 @@ export interface components {
             name: string;
             members?: components["schemas"]["FamilyMemberCreate"][];
         };
+        /**
+         * @description Subscription tiers in ascending order. A module declares the lowest tier that may
+         *     have it; every tier at or above that is entitled.
+         * @enum {string}
+         */
+        PlanTier: "FREE" | "BASIC" | "PRO" | "ENTERPRISE";
+        /**
+         * @description Where a church stands with a module. `disabled` retains data, `pending_purge` means
+         *     the grace period has elapsed, and `purged` means the module's records for this
+         *     church have been deleted.
+         * @enum {string}
+         */
+        ModuleStatus: "enabled" | "disabled" | "pending_purge" | "purged";
+        /**
+         * @description One module as this church sees it. Entitlement and enablement are reported
+         *     separately because they are different questions with different answers and different
+         *     remedies — one is an upgrade, the other is a switch (docs/01 §5). A module runs only
+         *     when `available` is true, which is exactly `entitled && status == enabled`.
+         */
+        ChurchModule: {
+            key: string;
+            name: string;
+            version: string;
+            minPlan: components["schemas"]["PlanTier"];
+            status: components["schemas"]["ModuleStatus"];
+            /** @description Whether the church's plan covers this module. */
+            entitled: boolean;
+            /** @description Whether it is actually serving requests — entitled and enabled. */
+            available: boolean;
+            /**
+             * @description True when the module declares restricted data, in which case enabling needs an
+             *     explicit acknowledgement. Derived from the manifest's data classes, so a module
+             *     that starts collecting restricted data starts requiring consent in the same
+             *     change.
+             */
+            requiresConsent: boolean;
+            /** @description Modules that must be enabled first. */
+            requires?: string[];
+            /** Format: date-time */
+            enabledAt?: string | null;
+            /** Format: date-time */
+            disabledAt?: string | null;
+            /**
+             * Format: date-time
+             * @description When this module's data for this church becomes eligible for purge. Set on
+             *     disable, cleared by re-enabling within the window.
+             */
+            purgeAfter?: string | null;
+        };
+        ModuleEnableRequest: {
+            /**
+             * @description Required — and only meaningful — when `requiresConsent` is true. The
+             *     administrator has seen what the module will collect and accepted it. Sending
+             *     `true` blindly is possible and is exactly what an audit trail is for; the point
+             *     is that no church starts collecting minors' or pastoral data because someone
+             *     flipped a toggle without a prompt.
+             */
+            acknowledgeRestrictedData?: boolean;
+            /** @description Module-specific settings, merged into the existing ones. */
+            settings?: {
+                [key: string]: unknown;
+            };
+        };
     };
     responses: {
         /** @description The request was malformed or failed validation */
@@ -598,6 +744,8 @@ export interface components {
         PersonId: string;
         FamilyId: string;
         Limit: number;
+        /** @description The module's manifest key, e.g. `prayer_wall`. */
+        ModuleKey: string;
         /** @description Opaque cursor from a previous response's `page.nextCursor`. */
         Cursor: string;
     };
@@ -1230,6 +1378,128 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listChurchModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalogue with per-church state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChurchModule"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    enableModule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+                /** @description The module's manifest key, e.g. `prayer_wall`. */
+                moduleKey: components["parameters"]["ModuleKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ModuleEnableRequest"];
+            };
+        };
+        responses: {
+            /** @description The module's new state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChurchModule"];
+                };
+            };
+            /** @description The module collects restricted data and no acknowledgement was given. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /**
+             * @description Either the caller lacks `module:manage`, or the church's plan does not cover
+             *     this module — `PLAN_UPGRADE_REQUIRED` distinguishes the second.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description A module this one requires is not enabled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    disableModule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+                /** @description The module's manifest key, e.g. `prayer_wall`. */
+                moduleKey: components["parameters"]["ModuleKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The module's new state, including when its data becomes purgeable */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChurchModule"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Another enabled module requires this one. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

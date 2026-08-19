@@ -150,3 +150,24 @@ describe('a module route', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('entitlement at the guard', () => {
+  it('404s an enabled module the plan no longer covers', async () => {
+    // The downgrade case. Billing switching modules off on downgrade is a background job,
+    // and a background job that has not run yet must not mean a church keeps using
+    // something it stopped paying for.
+    await setStatus('enabled');
+    const client = await harness.pool.connect();
+    try {
+      await client.query(`UPDATE module_definition SET min_plan = 'PRO' WHERE key = 'good_module'`);
+      const response = await get(harness.app, '/probe/module/thing', await staff());
+      expect(response.status).toBe(404);
+      expect(response.body.code).toBe('MODULE_NOT_ENABLED');
+    } finally {
+      await client.query(
+        `UPDATE module_definition SET min_plan = 'FREE' WHERE key = 'good_module'`,
+      );
+      client.release();
+    }
+  });
+});

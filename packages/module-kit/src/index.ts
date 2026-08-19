@@ -11,5 +11,6 @@
 export * from './manifest.js';
 export * from './validate.js';
 export * from './loader.js';
+export * from './entitlement.js';
 export * from './registry.js';
 export * from './lifecycle.js';

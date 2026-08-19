@@ -461,6 +461,105 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /churches/{churchId}/modules:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+    get:
+      operationId: listChurchModules
+      tags: [Modules]
+      summary: Every module this deployment offers, with this church's state
+      description: |
+        The administrator's view: the whole catalogue, each entry saying whether the plan
+        covers it and whether it is switched on. Unlike `GET /me/modules`, this deliberately
+        includes modules the church cannot have — that is what makes an upgrade path
+        visible.
+      responses:
+        '200':
+          description: The catalogue with per-church state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChurchModule' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /churches/{churchId}/modules/{moduleKey}/enable:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+      - $ref: '#/components/parameters/ModuleKey'
+    post:
+      operationId: enableModule
+      tags: [Modules]
+      summary: Turn a module on for this church
+      description: |
+        An action rather than a status field, because enabling has preconditions that a
+        PATCH would have to smuggle into a validation error: the plan must cover it, every
+        module it requires must already be on, and a module collecting restricted data
+        needs an explicit acknowledgement.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModuleEnableRequest' }
+      responses:
+        '200':
+          description: The module's new state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChurchModule' }
+        '400':
+          description: |
+            The module collects restricted data and no acknowledgement was given.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            Either the caller lacks `module:manage`, or the church's plan does not cover
+            this module — `PLAN_UPGRADE_REQUIRED` distinguishes the second.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A module this one requires is not enabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /churches/{churchId}/modules/{moduleKey}/disable:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+      - $ref: '#/components/parameters/ModuleKey'
+    post:
+      operationId: disableModule
+      tags: [Modules]
+      summary: Turn a module off for this church
+      description: |
+        Withdraws access, never data. Routes stop answering and navigation stops showing it
+        immediately; the module's records are retained for its declared grace period, and
+        re-enabling within that window restores everything and stops the clock.
+      responses:
+        '200':
+          description: The module's new state, including when its data becomes purgeable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChurchModule' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Another enabled module requires this one.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -494,6 +593,12 @@ components:
       in: query
       required: false
       schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    ModuleKey:
+      name: moduleKey
+      in: path
+      required: true
+      description: The module's manifest key, e.g. `prayer_wall`.
+      schema: { type: string, pattern: '^[a-z][a-z0-9_]*$' }
     Cursor:
       name: cursor
       in: query
@@ -513,12 +618,18 @@ components:
             `MODULE_NOT_ENABLED` is returned as 404 rather than 403 on purpose: a 403 would
             tell a caller that a module exists for a tenant that has not enabled it
             (docs/01 §3).
+
+            `PLAN_UPGRADE_REQUIRED` is separate from `FORBIDDEN` because the two need
+            different screens: one is "ask your administrator for access", the other is
+            "your plan does not include this". Collapsing them would make the upgrade path
+            unreachable from the UI.
           enum:
             - BAD_REQUEST
             - UNAUTHENTICATED
             - FORBIDDEN
             - NOT_FOUND
             - MODULE_NOT_ENABLED
+            - PLAN_UPGRADE_REQUIRED
             - CONFLICT
             - RATE_LIMITED
             - INTERNAL
@@ -852,6 +963,77 @@ components:
         members:
           type: array
           items: { $ref: '#/components/schemas/FamilyMemberCreate' }
+
+    PlanTier:
+      type: string
+      description: |
+        Subscription tiers in ascending order. A module declares the lowest tier that may
+        have it; every tier at or above that is entitled.
+      enum: [FREE, BASIC, PRO, ENTERPRISE]
+
+    ModuleStatus:
+      type: string
+      description: |
+        Where a church stands with a module. `disabled` retains data, `pending_purge` means
+        the grace period has elapsed, and `purged` means the module's records for this
+        church have been deleted.
+      enum: [enabled, disabled, pending_purge, purged]
+
+    ChurchModule:
+      type: object
+      description: |
+        One module as this church sees it. Entitlement and enablement are reported
+        separately because they are different questions with different answers and different
+        remedies — one is an upgrade, the other is a switch (docs/01 §5). A module runs only
+        when `available` is true, which is exactly `entitled && status == enabled`.
+      required: [key, name, version, minPlan, status, entitled, available, requiresConsent]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        version: { type: string }
+        minPlan: { $ref: '#/components/schemas/PlanTier' }
+        status: { $ref: '#/components/schemas/ModuleStatus' }
+        entitled:
+          type: boolean
+          description: Whether the church's plan covers this module.
+        available:
+          type: boolean
+          description: Whether it is actually serving requests — entitled and enabled.
+        requiresConsent:
+          type: boolean
+          description: |
+            True when the module declares restricted data, in which case enabling needs an
+            explicit acknowledgement. Derived from the manifest's data classes, so a module
+            that starts collecting restricted data starts requiring consent in the same
+            change.
+        requires:
+          type: array
+          description: Modules that must be enabled first.
+          items: { type: string }
+        enabledAt: { type: [string, 'null'], format: date-time }
+        disabledAt: { type: [string, 'null'], format: date-time }
+        purgeAfter:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When this module's data for this church becomes eligible for purge. Set on
+            disable, cleared by re-enabling within the window.
+
+    ModuleEnableRequest:
+      type: object
+      properties:
+        acknowledgeRestrictedData:
+          type: boolean
+          description: |
+            Required — and only meaningful — when `requiresConsent` is true. The
+            administrator has seen what the module will collect and accepted it. Sending
+            `true` blindly is possible and is exactly what an audit trail is for; the point
+            is that no church starts collecting minors' or pastoral data because someone
+            flipped a toggle without a prompt.
+        settings:
+          type: object
+          additionalProperties: true
+          description: Module-specific settings, merged into the existing ones.
 
   responses:
     BadRequest:

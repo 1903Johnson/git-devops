@@ -2,11 +2,10 @@ import { Inject, Injectable, Logger, Module, type OnApplicationBootstrap } from 
 import type { Pool } from 'pg';
 import { type LoadedModule, loadModules, syncModuleDefinitions } from '@church/module-kit';
 import { registerPermissions, type Permission } from '@church/policy';
-import { API_CONFIG, PG_POOL } from './common/tokens.js';
+import { ModulesController } from './module-admin/modules.controller.js';
+import { ModulesService } from './module-admin/modules.service.js';
+import { API_CONFIG, LOADED_MODULES, PG_POOL } from './common/tokens.js';
 import type { ApiConfig } from './config.js';
-
-/** The manifests this process loaded, for anything that needs the catalogue in memory. */
-export const LOADED_MODULES = Symbol('LOADED_MODULES');
 
 /**
  * Reads every module manifest at boot, registers their permissions, and projects them into
@@ -64,7 +63,9 @@ export class ModuleBootstrap implements OnApplicationBootstrap {
       useFactory: (config: ApiConfig) => loadModules(config.modulesDir),
     },
     ModuleBootstrap,
+    ModulesService,
   ],
+  controllers: [ModulesController],
   exports: [LOADED_MODULES],
 })
 export class ModulesModule {}
