@@ -194,6 +194,9 @@ importers:
       '@church/module-kit':
         specifier: workspace:*
         version: link:../../packages/module-kit
+      '@church/people':
+        specifier: workspace:*
+        version: link:../../packages/people
       '@church/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -441,6 +444,46 @@ importers:
       '@church/tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@church/testing':
+        specifier: workspace:*
+        version: link:../testing
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.2.0
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@26.2.0)(jsdom@30.0.1)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12))
+
+  packages/people:
+    dependencies:
+      '@church/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@church/church':
+        specifier: workspace:*
+        version: link:../church
+      '@church/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@church/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@church/tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.0
+    devDependencies:
+      '@church/migrations':
+        specifier: workspace:*
+        version: link:../migrations
       '@church/testing':
         specifier: workspace:*
         version: link:../testing

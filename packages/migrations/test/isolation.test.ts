@@ -141,3 +141,47 @@ describe('core schema isolation', () => {
     }
   });
 });
+
+describe('updated_at is maintained, not merely declared', () => {
+  // Until 0010 every table declared `updated_at NOT NULL DEFAULT now()` and nothing ever
+  // moved it: the repository writes exactly the columns it is handed, so the value recorded
+  // when a row was *created* and stayed there. Person.updatedAt and Family.updatedAt are in
+  // the contract, where a client would use them for caching — and cache stale data forever.
+  it('advances on update, for any writer', async () => {
+    await withRollback(async (client) => {
+      const churchId = await seedChurch(client, 'updated-at');
+      const { rows } = await client.query<{ id: string; updated_at: Date }>(
+        `INSERT INTO campus (church_id, name) VALUES ($1, 'Before') RETURNING id, updated_at`,
+        [churchId],
+      );
+      const before = rows[0]!;
+
+      // A hand-written UPDATE, deliberately: the trigger exists so the rule holds for
+      // writers that have never heard of the repository.
+      const after = await client.query<{ updated_at: Date }>(
+        `UPDATE campus SET name = 'After' WHERE id = $1 RETURNING updated_at`,
+        [before.id],
+      );
+      expect(after.rows[0]!.updated_at.getTime()).toBeGreaterThan(before.updated_at.getTime());
+    });
+  });
+
+  it('covers every table that declares the column', async () => {
+    // Discovery, not a list, so a table added later cannot quietly miss out.
+    await withRollback(async (client) => {
+      const { rows } = await client.query<{ table_name: string }>(
+        `SELECT c.relname AS table_name
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+           JOIN information_schema.columns col
+             ON col.table_name = c.relname AND col.column_name = 'updated_at'
+          WHERE n.nspname = 'public' AND c.relkind = 'r' AND col.table_schema = 'public'
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_trigger t
+               WHERE t.tgrelid = c.oid AND t.tgname = c.relname || '_set_updated_at'
+            )`,
+      );
+      expect(rows.map((row) => row.table_name)).toEqual([]);
+    });
+  });
+});

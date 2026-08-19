@@ -4,7 +4,9 @@ import { type LoadedModule, loadModules, syncModuleDefinitions } from '@church/m
 import { registerPermissions, type Permission } from '@church/policy';
 import { CampusService, ChurchService } from '@church/church';
 import { AuditController } from './audit/audit.controller.js';
+import { FamilyService, PersonService } from '@church/people';
 import { ChurchController } from './church/church.controller.js';
+import { PeopleController } from './people/people.controller.js';
 import { AuthController } from './auth/auth.controller.js';
 import { AuthService } from './auth/auth.service.js';
 import { ModulesController } from './module-admin/modules.controller.js';
@@ -72,8 +74,16 @@ export class ModuleBootstrap implements OnApplicationBootstrap {
     AuthService,
     ChurchService,
     CampusService,
+    PersonService,
+    FamilyService,
   ],
-  controllers: [ModulesController, AuthController, AuditController, ChurchController],
+  controllers: [
+    ModulesController,
+    AuthController,
+    AuditController,
+    ChurchController,
+    PeopleController,
+  ],
   exports: [LOADED_MODULES],
 })
 export class ModulesModule {}
