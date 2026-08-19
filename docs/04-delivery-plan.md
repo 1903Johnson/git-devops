@@ -47,11 +47,12 @@ second build queue — nothing blocks another agent any more, only itself.
 | CORE-017 | Person & Family services, membership status history, milestones (against CORE-017a) | **C** |
 | CORE-018 🔒 | `apps/api` scaffold: NestJS + Fastify, auth → policy → tenant → error-envelope lifecycle | **C** |
 | CORE-019 🔒 | Auth API + role assignment: `user_role`, roles into the token, `/auth/*`, `/me` | **C** |
+| DEP-002 | Dependency window: Next.js + its ESLint config into the catalog (blocks WEB-010) | **C** |
 | WEB-010 | Admin web shell: routing, auth flow against CORE-019, layout, nav-from-API stub (needs DEP-002) | **C** |
 
-Sprint 1 is complete apart from CORE-016, CORE-017 and WEB-010. The first two were
-Codex's and are now Claude's; WEB-010 additionally needs DEP-002 (the web dependency batch)
-before it can start.
+Sprint 1 is complete apart from WEB-010. CORE-016 and CORE-017 were Codex's and are now
+Claude's; both have shipped. DEP-002 has landed, so WEB-010 is unblocked — `next` and
+`eslint-config-next` are in the catalog and a package may reference them as `catalog:`.
 
 ---
 
