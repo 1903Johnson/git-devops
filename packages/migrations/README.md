@@ -42,6 +42,44 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON thing TO @app_role@;
 `@app_role@` is substituted at apply time, so one migration set works in test (`app_test`)
 and production (an unprivileged application role) without conditionals in SQL.
 
+## Foreign keys between tenant-scoped tables must carry `church_id`
+
+The four parts above make reads and writes tenant-safe. They do nothing about references.
+Postgres runs referential-integrity checks as the owner of the *referenced* table, and
+those checks do not consult row-level security — so given
+
+```sql
+person_id uuid NOT NULL REFERENCES person (id)
+```
+
+one church can insert a row pointing at another church's person knowing nothing but the
+UUID. RLS still hides the person on every read, so no data escapes, but two things are
+wrong: the insert succeeding is an existence oracle for a UUID in some other tenant, and
+the row left behind is a reference the owning church can delete out from under. This is not
+theoretical — it was reproduced against a live database while writing `0005_people.sql`.
+
+The fix is to put the tenant inside the key. Give the parent a `UNIQUE (church_id, id)` and
+reference both columns:
+
+```sql
+CONSTRAINT thing_tenant_key UNIQUE (church_id, id),
+CONSTRAINT thing_person_fk FOREIGN KEY (church_id, person_id)
+  REFERENCES person (church_id, id) ON DELETE CASCADE
+```
+
+Now a mismatched tenant is a foreign-key violation, enforced by the same machinery that was
+previously the hole. Two details:
+
+- **Nullable references need the column-list form.** `ON DELETE SET NULL` on a composite key
+  tries to null `church_id` too, which is `NOT NULL`, so the delete fails at runtime rather
+  than at migration time. Write `ON DELETE SET NULL (campus_id)` (Postgres 15+) to null only
+  the optional half.
+- **The unique key looks redundant** against the primary key on `id` alone. It is not
+  decoration — a composite foreign key needs a unique key of matching shape to point at.
+
+`packages/migrations/test/people-isolation.test.ts` has the regression test, including the
+same-tenant case: a constraint that rejects everything is an outage, not isolation.
+
 Applied migrations are immutable: the runner records a checksum and refuses to run if the
 file later changes. Add a new migration instead of editing history.
 

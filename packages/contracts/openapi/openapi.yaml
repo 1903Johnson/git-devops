@@ -20,6 +20,8 @@ security:
 tags:
   - name: Churches
   - name: Campuses
+  - name: People
+  - name: Families
 
 paths:
   /churches/{churchId}:
@@ -148,6 +150,317 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /churches/{churchId}/people:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+    get:
+      operationId: listPeople
+      tags: [People]
+      summary: List people in a church
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/MembershipStatus' }
+        - name: campusId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: includeArchived
+          in: query
+          required: false
+          description: Archived people are excluded by default; directories should not list them.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: A page of people
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Person' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createPerson
+      tags: [People]
+      summary: Create a person
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonCreate' }
+      responses:
+        '201':
+          description: The created person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /people/{personId}:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      operationId: getPerson
+      tags: [People]
+      summary: Fetch a person
+      responses:
+        '200':
+          description: The person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updatePerson
+      tags: [People]
+      summary: Update a person
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonUpdate' }
+      responses:
+        '200':
+          description: The updated person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: archivePerson
+      tags: [People]
+      summary: Archive a person
+      description: |
+        Archives rather than deletes. Giving and attendance history reference people, and a
+        hard delete would silently rewrite the past. Erasure is a separate, deliberate
+        request under the data-privacy workflow.
+      responses:
+        '204':
+          description: Archived
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /people/{personId}/status:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      operationId: listStatusHistory
+      tags: [People]
+      summary: A person's membership history
+      responses:
+        '200':
+          description: Every recorded status change, most recent first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MembershipStatusChange' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: changeStatus
+      tags: [People]
+      summary: Record a membership status change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/MembershipStatus' }
+                note: { type: string, maxLength: 2000 }
+      responses:
+        '201':
+          description: The recorded change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipStatusChange' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /people/{personId}/milestones:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      operationId: listMilestones
+      tags: [People]
+      summary: A person's milestones
+      responses:
+        '200':
+          description: Milestones, most recent first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Milestone' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: recordMilestone
+      tags: [People]
+      summary: Record a milestone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MilestoneCreate' }
+      responses:
+        '201':
+          description: The recorded milestone
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Milestone' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /churches/{churchId}/families:
+    parameters:
+      - $ref: '#/components/parameters/ChurchId'
+    get:
+      operationId: listFamilies
+      tags: [Families]
+      summary: List families
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of families
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Family' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createFamily
+      tags: [Families]
+      summary: Create a family
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FamilyCreate' }
+      responses:
+        '201':
+          description: The created family
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /families/{familyId}:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      operationId: getFamily
+      tags: [Families]
+      summary: Fetch a family and its members
+      responses:
+        '200':
+          description: The family
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateFamily
+      tags: [Families]
+      summary: Rename a family
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '200':
+          description: The updated family
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{familyId}/members:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    post:
+      operationId: addFamilyMember
+      tags: [Families]
+      summary: Add a person to a family
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FamilyMemberCreate' }
+      responses:
+        '201':
+          description: The membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilyMember' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: That person is already in this family
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /families/{familyId}/members/{personId}:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+      - $ref: '#/components/parameters/PersonId'
+    delete:
+      operationId: removeFamilyMember
+      tags: [Families]
+      summary: Remove a person from a family
+      responses:
+        '204':
+          description: Removed
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -163,6 +476,16 @@ components:
       schema: { type: string, format: uuid }
     CampusId:
       name: campusId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PersonId:
+      name: personId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    FamilyId:
+      name: familyId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -281,6 +604,254 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         timezone: { type: string }
         isPrimary: { type: boolean }
+
+    Address:
+      type: object
+      description: |
+        Flat rather than free-text: check-in signage, mail merges, and tax receipts all need
+        the parts separately, and splitting a single string back apart is lossy.
+      properties:
+        line1: { type: string, maxLength: 200 }
+        line2: { type: string, maxLength: 200 }
+        city: { type: string, maxLength: 120 }
+        region:
+          type: string
+          maxLength: 120
+          description: State, province, or county — whatever the country calls it.
+        postalCode: { type: string, maxLength: 20 }
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2, matching the church's own country code.
+          minLength: 2
+          maxLength: 2
+
+    MembershipStatus:
+      type: string
+      description: |
+        Where someone stands with this congregation. `transferred` means they left for
+        another church rather than drifted away, which is a different pastoral fact from
+        `inactive` and is why the two are separate values.
+      enum: [visitor, attendee, member, inactive, transferred]
+
+    Person:
+      type: object
+      description: |
+        The platform's central record. A Person is not a login: children and visitors are
+        Person records with no account at all, so nothing may assume a `User` exists for one.
+      required: [id, churchId, firstName, lastName, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        churchId: { type: string, format: uuid }
+        campusId:
+          type: [string, 'null']
+          format: uuid
+          description: The campus this person calls home. Absent for a single-site church.
+        firstName: { type: string, minLength: 1, maxLength: 120 }
+        lastName: { type: string, minLength: 1, maxLength: 120 }
+        preferredName:
+          type: string
+          maxLength: 120
+          description: What they are actually called. Display this in preference to `firstName`.
+        gender:
+          type: string
+          maxLength: 60
+          description: |
+            Free text, not an enum. Churches record this for ministry grouping, and fixing
+            the permitted values in a contract would be a product decision smuggled into a
+            schema.
+        dateOfBirth:
+          type: string
+          format: date
+          description: |
+            Optional, and minor PII. Children's check-in grades by age, so this is stored
+            in the clear and covered by the retention policy rather than by encryption.
+        email:
+          type: string
+          format: email
+          description: |
+            Not unique, on purpose. A child's contact address is usually a parent's, and
+            families routinely share one — uniqueness here would reject the most ordinary
+            household in the congregation.
+        phone: { type: string, maxLength: 40 }
+        address: { $ref: '#/components/schemas/Address' }
+        photoUrl: { type: string, format: uri }
+        status: { $ref: '#/components/schemas/MembershipStatus' }
+        archivedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Set when archived. Archived people are excluded from directories.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PersonCreate:
+      type: object
+      required: [firstName, lastName]
+      description: |
+        `churchId` is absent by design: it comes from the authenticated tenant context, so a
+        client cannot create a person inside another church by naming one.
+      properties:
+        campusId: { type: string, format: uuid }
+        firstName: { type: string, minLength: 1, maxLength: 120 }
+        lastName: { type: string, minLength: 1, maxLength: 120 }
+        preferredName: { type: string, maxLength: 120 }
+        gender: { type: string, maxLength: 60 }
+        dateOfBirth: { type: string, format: date }
+        email: { type: string, format: email }
+        phone: { type: string, maxLength: 40 }
+        address: { $ref: '#/components/schemas/Address' }
+        photoUrl: { type: string, format: uri }
+        status:
+          allOf:
+            - $ref: '#/components/schemas/MembershipStatus'
+          description: |
+            The starting status, recorded as the first entry in the membership history.
+            Defaults to `visitor`.
+
+    PersonUpdate:
+      type: object
+      description: |
+        `status` and `archivedAt` are absent by design. Status moves only through
+        `POST /people/{personId}/status`, which appends to the history in the same
+        transaction; allowing it here would let a client change someone's standing with no
+        record of who did it or why. Archiving is `DELETE /people/{personId}`.
+      properties:
+        campusId: { type: [string, 'null'], format: uuid }
+        firstName: { type: string, minLength: 1, maxLength: 120 }
+        lastName: { type: string, minLength: 1, maxLength: 120 }
+        preferredName: { type: [string, 'null'], maxLength: 120 }
+        gender: { type: [string, 'null'], maxLength: 60 }
+        dateOfBirth: { type: [string, 'null'], format: date }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'], maxLength: 40 }
+        address: { $ref: '#/components/schemas/Address' }
+        photoUrl: { type: [string, 'null'], format: uri }
+
+    MembershipStatusChange:
+      type: object
+      description: |
+        One entry in an append-only history. Entries are never edited or removed: "attended
+        for two years, then joined" and "transferred in last month" are different facts, and
+        overwriting a status erases the difference.
+      required: [id, personId, status, changedAt]
+      properties:
+        id: { type: string, format: uuid }
+        personId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/MembershipStatus' }
+        changedAt: { type: string, format: date-time }
+        changedBy:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            The user who recorded the change, not the person it is about. Null when the
+            change came from an import or the acting user has since been deleted.
+        note: { type: string, maxLength: 2000 }
+
+    MilestoneType:
+      type: string
+      description: |
+        Sacraments and rites. Denominations disagree about which of these are sacraments;
+        the platform records the event and stays out of the argument.
+      enum: [baptism, confirmation, membership_class, marriage, dedication]
+
+    Milestone:
+      type: object
+      required: [id, churchId, personId, type, occurredOn, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        churchId: { type: string, format: uuid }
+        personId: { type: string, format: uuid }
+        campusId:
+          type: [string, 'null']
+          format: uuid
+          description: Where it happened, which is not always the person's home campus.
+        type: { $ref: '#/components/schemas/MilestoneType' }
+        occurredOn:
+          type: string
+          format: date
+          description: |
+            A date, not a timestamp. These are historical records — a baptism in 1974 has a
+            date and no defensible time of day.
+        officiant: { type: string, maxLength: 200 }
+        notes: { type: string, maxLength: 2000 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    MilestoneCreate:
+      type: object
+      required: [type, occurredOn]
+      description: |
+        `personId` comes from the path and `churchId` from the tenant context, so neither is
+        accepted in the body.
+      properties:
+        type: { $ref: '#/components/schemas/MilestoneType' }
+        occurredOn: { type: string, format: date }
+        campusId: { type: string, format: uuid }
+        officiant: { type: string, maxLength: 200 }
+        notes: { type: string, maxLength: 2000 }
+
+    FamilyRelationship:
+      type: string
+      description: |
+        The relationship of a person to their household. **This is not an authorisation.**
+        `parent` or `guardian` here says nothing about who may collect a child at check-in —
+        that is a separate, explicit `GuardianAuthorisation` owned by the children's check-in
+        module (docs/02 §5). A custody order can leave a parent on this list and off that
+        one, so no caller may substitute one for the other.
+      enum: [parent, guardian, child, spouse, other]
+
+    FamilyMember:
+      type: object
+      required: [id, familyId, personId, relationship, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        familyId: { type: string, format: uuid }
+        personId: { type: string, format: uuid }
+        relationship: { $ref: '#/components/schemas/FamilyRelationship' }
+        person:
+          allOf:
+            - $ref: '#/components/schemas/Person'
+          description: |
+            Embedded so a household view renders in one call. Present on
+            `GET /families/{familyId}`; omitted where the caller already has the person.
+        createdAt: { type: string, format: date-time }
+
+    FamilyMemberCreate:
+      type: object
+      required: [personId, relationship]
+      properties:
+        personId: { type: string, format: uuid }
+        relationship: { $ref: '#/components/schemas/FamilyRelationship' }
+
+    Family:
+      type: object
+      description: |
+        A household. Membership is many-to-many: a person belongs to more than one family
+        after a remarriage, and an adult child appears in both their parents' household and
+        their own. Forcing a single family per person would make the platform take a side in
+        a real pastoral situation.
+      required: [id, churchId, name, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        churchId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        members:
+          type: array
+          description: Present on `GET /families/{familyId}`; omitted from list responses.
+          items: { $ref: '#/components/schemas/FamilyMember' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    FamilyCreate:
+      type: object
+      required: [name]
+      description: |
+        `churchId` is absent by design — it comes from the tenant context. Members may be
+        supplied here so that creating a household is one call rather than one per person.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyMemberCreate' }
 
   responses:
     BadRequest:
