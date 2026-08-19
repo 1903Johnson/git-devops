@@ -17,6 +17,7 @@ export {
 export {
   ForbiddenError,
   assertCan,
+  campusScopeOf,
   can,
   type AllowRule,
   type DenyRule,

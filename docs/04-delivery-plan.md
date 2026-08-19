@@ -241,8 +241,15 @@ Pass 1 reviewed `549567c` and returned three findings, all confirmed on inspecti
 | ID | From | Severity | What | Status |
 |---|---|---|---|---|
 | REV-001 | SEC-002 | high | Refresh rotation consumed a token without a guard, so two concurrent presentations both succeeded and theft detection never fired | **fixed** |
-| REV-002 | SEC-001 | high | Campus scoping is applied on single-record reads and writes only; collection, create and campus-management paths pass no resource, so a CAMPUS_ADMIN is not confined | open |
+| REV-002 | SEC-001 | high | The campus rule is opt-in: it compares a resource's campus against the subject's, so listings (which have no single campus), creates (no id yet) and moves (a write to the destination) were unscoped, and a CAMPUS_ADMIN could read every person in the church | **fixed** |
 | REV-003 | SEC-003 | medium | TOTP counter is read outside the write transaction and advanced unconditionally, so one code can complete two concurrent logins | open |
+
+**REV-002 left one thing open deliberately.** `family` and `family_member` carry no
+`campus_id`, so a household cannot be confined to a campus — and a family whose members
+attend two sites has no single right answer. Adding a column would be inventing a semantic
+rather than fixing a defect, so the gap is documented in `packages/policy/README.md` and
+waits on a decision. Everything a campus admin reaches *through* a family is scoped: the
+people themselves are.
 
 Two things that pass is worth remembering for:
 
