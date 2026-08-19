@@ -43,26 +43,51 @@ export async function closeAdminPool(): Promise<void> {
   pool = undefined;
 }
 
-/** Creates the non-superuser test role if it does not exist, and grants it schema usage. */
+/**
+ * Arbitrary, stable key for the advisory lock that serialises `ensureAppRole`. Any bigint
+ * would do; it only has to be one no other part of the suite picks.
+ */
+const APP_ROLE_LOCK = 4_017_001;
+
+/**
+ * Creates the non-superuser test role if it does not exist, and grants it schema usage.
+ *
+ * Call this from test setup, outside a transaction: it opens one of its own.
+ *
+ * Every statement here touches an object shared by the whole database, and CI runs the
+ * packages' suites in parallel against a single one, so all of it races.
+ *
+ * The role creation races on `pg_authid`. Both exception classes are needed there: a
+ * concurrent CREATE ROLE surfaces as unique_violation on pg_authid_rolname_index, not the
+ * duplicate_object you would expect (verified by racing eight connections at it; catching
+ * duplicate_object alone still failed).
+ *
+ * The GRANT races on `pg_namespace` — it rewrites the ACL on the row for `public` — and
+ * that one cannot be handled the same way, because `tuple concurrently updated` is raised
+ * by the heap update itself and no handler inside the statement ever sees it. So the whole
+ * body runs under an advisory lock instead, which makes the callers queue rather than
+ * collide. The lock is transaction-scoped, so it is released by the COMMIT and by a
+ * ROLLBACK alike; there is no path that leaks it back into the pool still held.
+ */
 export async function ensureAppRole(client: PoolClient): Promise<void> {
-  // The existence check and the CREATE are not atomic, and CI runs this package's suite in
-  // parallel with @church/tenancy's against one database — both racing to create the role.
-  //
-  // Both exception classes are needed: a concurrent CREATE ROLE surfaces as
-  // unique_violation on pg_authid_rolname_index, not the duplicate_object you would expect
-  // (verified by racing eight connections at it; catching duplicate_object alone still
-  // failed). Catching both is what makes this idempotent rather than
-  // idempotent-until-it-matters.
-  await client.query(`
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
-        CREATE ROLE ${APP_ROLE} NOLOGIN;
-      END IF;
-    EXCEPTION WHEN duplicate_object OR unique_violation THEN
-      NULL;
-    END $$;
-  `);
-  await client.query(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}`);
+  await client.query('BEGIN');
+  try {
+    await client.query('SELECT pg_advisory_xact_lock($1)', [APP_ROLE_LOCK]);
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
+          CREATE ROLE ${APP_ROLE} NOLOGIN;
+        END IF;
+      EXCEPTION WHEN duplicate_object OR unique_violation THEN
+        NULL;
+      END $$;
+    `);
+    await client.query(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}`);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  }
 }
 
 /**

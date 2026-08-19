@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:integration": "vitest run test/harness.integration.test.ts",
+    "test:integration": "vitest run test/harness.integration.test.ts test/concurrency.integration.test.ts",
     "test:isolation": "vitest run test/isolation.test.ts"
   },
   "dependencies": {
