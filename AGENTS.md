@@ -18,30 +18,37 @@ where a church has deliberately opted in; and every access to restricted data is
 
 ## 2. Who owns what
 
-**This table is the single source of truth for ownership zones.** `.github/CODEOWNERS`
+**This table is the single source of truth for the division of labour.** `.github/CODEOWNERS`
 encodes it for GitHub's review routing and `docs/03-repo-and-workflow.md` §2 explains the
-reasoning behind it — but when they disagree with this table, this table is right and the
-other two are stale. Change ownership here first.
+reasoning — but when they disagree with this table, this table is right and the other two
+are stale. Change it here first.
 
-| Zone | Owner |
+| Responsibility | Agent |
 |---|---|
-| `packages/contracts`, `packages/sdk`, `packages/tenancy`, `packages/policy`, `packages/module-kit` | Claude |
-| `packages/testing`, `packages/migrations`, `packages/identity` | Claude |
-| `apps/api` core: identity, church, audit, billing | Claude |
-| `apps/api` core: people, groups, events, attendance | Codex |
-| `modules/giving`, `modules/pastoral-care` | Claude |
-| `modules/children-checkin` — domain, policy, sync, purge | Claude |
-| `modules/children-checkin` — kiosk UI, roster cache, labels | Codex |
-| `modules/prayer-wall`, `volunteer-scheduling`, `facilities`, `media-library` | Codex |
-| `apps/admin-web`, `apps/member-mobile`, `apps/kiosk`, `packages/ui` | Codex |
-| `infra/`, `.github/`, `scripts/`, `docs/adr/` | Claude |
+| Every package, app and module — design, implementation, migrations, tests | **Claude** |
+| Contracts, tenancy, authorization, identity, audit, infra, CI | **Claude** |
+| Adversarial review: find defects in what Claude built, and report them | **Codex** |
+| Fixing what Codex reports | **Claude** |
 
-`.github/CODEOWNERS` enforces review routing. The split is by **risk and ambiguity**, not
-volume: Claude takes work where a wrong decision is expensive and the spec is incomplete;
-Codex takes work where the spec can be frozen up front and the value is throughput.
+Codex writes no production code. It reads what has been merged, attacks it, and files what
+it finds. Claude triages every report, fixes what is real, and says plainly why anything
+dismissed is not a defect.
 
-**Never edit outside your zone.** Need a change there? Open an issue titled
-`needs-owner:<claude|codex> — <what>` and continue with the rest of your ticket.
+**Why the split changed.** The original plan divided the work by directory: Claude took the
+risky half, Codex took throughput. It did not survive contact. Codex delivered two tickets
+and then spent longer blocked than building — first by a dependency rule only Claude could
+lift, then by a sandbox that could not reach GitHub at all. Meanwhile every genuine defect
+found in this repository was found by Claude testing its own work, which is exactly the
+review that is hardest to trust: an author's tests encode the author's assumptions, and the
+bug that gets through is always the one nobody thought to write a test for.
+
+So Codex is pointed at the thing a second agent is actually good at — *disagreeing*. It has
+no deadline, no directory to defend, and no reason to conclude that the code is fine. A
+build queue that never blocks and a reviewer whose only job is to find something wrong is a
+better use of two agents than two build queues that collide.
+
+**Nobody edits outside their responsibility.** Codex does not open pull requests against
+`main`. It files issues and reports; Claude turns them into commits.
 
 ## 3. Boundary rules (CI-enforced, `scripts/check-boundaries.mjs`)
 

@@ -35,57 +35,62 @@ How Claude and Codex build this repo at the same time without stepping on each o
 └── .github/                  # workflows, CODEOWNERS, templates
 ```
 
-Directory boundaries are the collaboration mechanism. Two agents editing two directories
-never conflict; two agents editing one file always do.
+Directory boundaries mattered when two agents wrote code at once. With one build queue they
+are no longer a coordination mechanism, but they remain how the module system stays honest —
+see §5 and the boundary checks in CI.
 
-## 2. Ownership model
+## 2. Division of labour
 
-**The ownership table lives in [`AGENTS.md`](../AGENTS.md) §2 and only there.** Both agents
-read that file at the start of every session, so it is the copy that has to be right. This
-section explains *why* the split falls where it does; `.github/CODEOWNERS` encodes the same
-map as literal paths because GitHub cannot read a table.
+**The table lives in [`AGENTS.md`](../AGENTS.md) §2 and only there.** Both agents read that
+file at the start of every session, so it is the copy that has to be right. This section
+explains *why* it says what it does.
 
-Three copies of one map is two copies too many — it drifted within days of being written,
-which is what prompted this consolidation. If you change who owns what, change `AGENTS.md`
-§2 and update `CODEOWNERS` to match.
+**Claude builds everything. Codex reviews what lands and reports defects.**
 
-The split is by *risk and ambiguity*, not by volume. Claude takes the work where a wrong
-decision is expensive and the spec is incomplete — tenancy, authz, payments, child safety,
-purge, infra, CI, and anything that defines a contract others build against. Codex takes
-the work where the spec can be made complete up front and the value is in throughput —
-CRUD modules, screens, components, test scaffolding. Codex is faster per well-specified
-ticket; Claude is better where the ticket has to be designed before it can be written. Play
-to that.
+The original arrangement split the work by directory — Claude took the risky half, Codex
+took throughput — and it did not survive contact with reality. Codex shipped two tickets and
+then spent longer blocked than building: first by a dependency rule only Claude could lift,
+then by a sandbox whose proxy could not reach GitHub, which left it fourteen merges behind
+its own work. The coordination overhead of contract handoffs, ownership zones and merge
+sequencing was being paid in full while the parallelism it bought was mostly theoretical.
 
-Two consequences worth stating explicitly:
+Meanwhile, every genuine defect found in this repository was found by Claude testing its own
+work. That sounds like a success and is actually the risk: an author's tests encode the
+author's assumptions, so the bug that survives is always the one nobody thought to write a
+test for. Several were caught here only because a sabotage check was run deliberately —
+removing a safety clause to see whether anything went red. That habit is good and it is not
+a substitute for someone who wants the code to be wrong.
 
-- **Security-critical paths need Claude's approval regardless of author.** That covers
-  `packages/tenancy`, `packages/policy`, `modules/children-checkin`, `modules/giving`, and
-  `infra/`.
-- **Codex owning the UI inside a Claude-owned module is deliberate**, not an exception to
-  patch. Kiosk screens for children's check-in are throughput work; the custody logic
-  behind them is not. The boundary runs between them, not around the module.
+So the second agent is pointed at disagreement instead of throughput. Codex has no deadline,
+no directory to defend, and no reason to conclude the code is fine. The trade is explicit: a
+slower build queue in exchange for an adversary. See `docs/04` §"The review loop" for how a
+finding becomes a fix, and `docs/05` for Codex's standing brief.
+
+What did not change: security-critical paths — `packages/tenancy`, `packages/policy`,
+`packages/audit`, `modules/children-checkin`, `modules/giving`, `infra/` — still get the
+heaviest scrutiny, and are now first in Codex's review order rather than restricted by
+author.
 
 ## 3. Contract-first protocol
 
-This is the part that makes parallelism work. For every feature that spans the two agents:
+Contract-first outlived the two-queue arrangement it was designed for, because its second
+job turned out to matter more than its first. It was meant to let two agents work at once; it
+also forces the shapes to be decided, written down and reviewed before any implementation
+argues for itself. That is worth keeping with one builder:
 
 ```
 1. Claude writes the contract         → packages/contracts (OpenAPI + types)
                                         + migration for shared tables
                                         + failing integration test skeletons
 2. Contract PR merges to main         → this is the sync point
-3. Both agents work simultaneously:
-     Claude  → server implementation of the risky half
-     Codex   → client implementation + the well-specified server half
-   Both compile against the same frozen types. Neither waits for the other.
+3. Implementation builds against the frozen types
 4. Integration PR                     → wired together, tests go green
+5. Codex reviews the merged result adversarially
 ```
 
-**Contract changes mid-sprint:** allowed, but only via a contract PR from Claude, and the
-change must be announced in the sprint issue before either side writes code against it.
-A contract that changes without announcement silently breaks the other agent's in-flight
-branch — that is the single most likely way this collaboration goes wrong.
+**Contract changes mid-sprint:** still their own PR, still announced. The reason is no longer
+a second agent's in-flight branch — it is that a contract edited in passing, inside a feature
+PR, is a contract nobody reviewed as a contract.
 
 ## 4. Branch, commit, PR conventions
 
@@ -101,11 +106,9 @@ Rules:
   rebase for longer than the review saves.
 - **Rebase on `main` before every push.** Both agents pull at the start of each work
   session. `main` is protected: PR + green CI + one approving review.
-- **Cross-review is mandatory.** Codex reviews Claude's PRs; Claude reviews Codex's. Any PR
-  touching `packages/tenancy`, `packages/policy`, `modules/children-checkin`,
-  `modules/giving`, or `infra/` requires Claude's approval regardless of author.
-- **Never edit a file outside your ownership zone.** Need a change there? Open an issue
-  tagged `needs-owner:claude` / `needs-owner:codex` and keep moving on something else.
+- **Review happens after the merge, not on the branch.** Codex reviews `main`, so there is
+  no arguing about work in progress and no ambiguity about what actually shipped. Findings
+  come back as reports; fixes land as `REV-nnn` tickets (`docs/04` §"The review loop").
 
 ## 5. Conflict-avoidance rules that actually matter
 
@@ -116,7 +119,7 @@ Rules:
 | Central registration files | There are none by design — the module registry discovers manifests by convention. If a file starts accumulating one line per feature, that is a bug in the architecture, not a merge problem to manage. |
 | Generated code | `packages/sdk` is generated, never hand-edited, and regenerated in CI. Conflicts there are resolved by regenerating, never by hand-merging. |
 | Shared test fixtures | `packages/testing` is Claude-owned; Codex adds module-local fixtures inside its own module. |
-| Same-ticket collisions | One ticket has exactly one owner. Split tickets rather than sharing them. |
+| Same-ticket collisions | Gone with the second build queue. Kept here because the rule returns the moment anyone else writes code. |
 
 ## 6. CI pipeline (blocking on every PR)
 
