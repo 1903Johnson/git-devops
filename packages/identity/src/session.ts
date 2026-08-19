@@ -142,22 +142,47 @@ export class SessionService {
         return { status: 'reuse_detected' } as const;
       }
 
-      const tokens = await this.#db.transaction(async (tx) => {
-        await tx.query(
+      // The decision above was made from a snapshot read in an earlier transaction, so it
+      // is a statement about the past. Two holders of one token both reach here with
+      // `rotate` — which is exactly what a stolen token racing its owner looks like — and
+      // an unguarded UPDATE would let both of them spend it, mint a successor each, and
+      // leave the family live. Rotation would still pass every sequential test while
+      // detecting nothing.
+      //
+      // So the guard, not the decision, is what consumes the token: the UPDATE only
+      // matches a row still unused and unrevoked. Under READ COMMITTED the loser blocks
+      // on the winner's row lock, re-evaluates the predicate against the committed row,
+      // and matches nothing. Zero rows is therefore not an error — it is the second
+      // presentation, and it is treated as the reuse it is.
+      return this.#db.transaction(async (tx) => {
+        const consumed = await tx.query(
           `UPDATE refresh_token SET used_at = now(), revoked_at = now(), revoked_reason = 'rotated'
-            WHERE id = $1`,
+            WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL
+            RETURNING id`,
           [stored.id],
         );
-        return this.#issuePairIn(
+
+        if ((consumed.rowCount ?? 0) === 0) {
+          // Because the loser waited on that lock, the winner's successor is already
+          // committed and visible here, so revoking the family reaches it too.
+          await tx.query(
+            `UPDATE refresh_token
+                SET revoked_at = now(), revoked_reason = 'reuse_detected'
+              WHERE family_id = $1 AND revoked_at IS NULL`,
+            [stored.family_id],
+          );
+          return { status: 'reuse_detected' } as const;
+        }
+
+        const tokens = await this.#issuePairIn(
           tx,
           stored.user_id,
           stored.church_id,
           stored.family_id,
           deviceLabel,
         );
+        return { status: 'success', tokens, userId: stored.user_id } as const;
       });
-
-      return { status: 'success', tokens, userId: stored.user_id } as const;
     });
   }
 
