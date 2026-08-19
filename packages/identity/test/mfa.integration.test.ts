@@ -95,6 +95,13 @@ async function waitForBlockedBackends(n: number, timeoutMs = 5_000): Promise<voi
   }
 }
 
+async function unenrolledUser() {
+  const address = email();
+  const created = await identity.register(churchId, address, PASSWORD);
+  if (created.status !== 'created') throw new Error('setup failed');
+  return { address, userId: created.userId };
+}
+
 async function enrolledUser() {
   const address = email();
   const created = await identity.register(churchId, address, PASSWORD);
@@ -233,6 +240,63 @@ describe('replay and recovery', () => {
 
     expect((await mfa.verify(churchId, userId, code)).status).toBe('ok');
     expect((await mfa.verify(churchId, userId, code)).status).toBe('invalid');
+  });
+
+  it('refuses a privileged account that never enrolled, and gives it a way in', async () => {
+    // The gap REV-004 closes. mfaRequiredFor named STAFF from the day MFA shipped and
+    // nothing consulted it: login asked only whether a second factor *existed*, so a
+    // privileged account that never set one up was waved through on a password while /me
+    // told it, accurately, that MFA was required of it.
+    const { address, userId } = await unenrolledUser();
+    await pool.query(`INSERT INTO user_role (church_id, user_id, role) VALUES ($1, $2, 'STAFF')`, [
+      churchId,
+      userId,
+    ]);
+
+    const login = await sessions.login(address, PASSWORD);
+    expect(login.status).toBe('mfa_enrollment_required');
+    if (login.status !== 'mfa_enrollment_required') return;
+
+    // The ticket is not a session. This is the property the whole design rests on, and it
+    // holds because of the audience rather than because a route remembered to check.
+    await expect(verifyAccessToken(login.enrollmentTicket, keys)).rejects.toThrow();
+
+    const started = await sessions.beginEnrollment(login.enrollmentTicket);
+    if (!started) throw new Error('enrollment did not start');
+
+    const confirmed = await sessions.completeEnrollment(
+      login.enrollmentTicket,
+      nextCodeFor(started.secret),
+    );
+    expect(confirmed.status).toBe('success');
+    if (confirmed.status !== 'success') return;
+    expect(confirmed.recoveryCodes).toHaveLength(RECOVERY_CODE_COUNT);
+
+    // Now enrolled, so the next login owes a code rather than a ticket.
+    expect((await sessions.login(address, PASSWORD)).status).toBe('mfa_required');
+  });
+
+  it('lets an unprivileged account sign in without a second factor', async () => {
+    // MEMBER is deliberately outside MFA_REQUIRED_ROLES: forcing a congregation of
+    // volunteers onto TOTP produces shared secrets on paper, not security.
+    const { address, userId } = await unenrolledUser();
+    await pool.query(`INSERT INTO user_role (church_id, user_id, role) VALUES ($1, $2, 'MEMBER')`, [
+      churchId,
+      userId,
+    ]);
+    expect((await sessions.login(address, PASSWORD)).status).toBe('success');
+  });
+
+  it('refuses an enrollment ticket forged from an MFA challenge', async () => {
+    // Two half-authenticated tokens now exist. Each must be worthless where the other is
+    // expected, or the split has bought nothing.
+    const { address, secret } = await enrolledUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'mfa_required') throw new Error('expected a challenge');
+
+    expect(await sessions.beginEnrollment(login.challenge)).toBeUndefined();
+    const asEnrollment = await sessions.completeEnrollment(login.challenge, nextCodeFor(secret));
+    expect(asEnrollment.status).toBe('invalid');
   });
 
   it('refuses the same TOTP code to two callers arriving together', async () => {

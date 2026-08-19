@@ -30,9 +30,12 @@ export {
 } from './service.js';
 export {
   ACCESS_TOKEN_TTL_SECONDS,
+  ENROLLMENT_TICKET_TTL_SECONDS,
   MFA_CHALLENGE_TTL_SECONDS,
   InvalidAccessTokenError,
+  issueEnrollmentTicket,
   issueMfaChallenge,
+  verifyEnrollmentTicket,
   verifyMfaChallenge,
   type MfaChallengeClaims,
   issueAccessToken,

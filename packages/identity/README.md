@@ -117,6 +117,24 @@ deliberately indistinguishable from a wrong key.
 **Enrollment does not take effect until a code confirms it.** Enabling on issue locks out
 anyone who mistyped the setup or lost the QR halfway.
 
+**"Required" is a gate, not a label (REV-004).** For its first months `mfaRequiredFor` was
+consulted by nothing: login asked only whether a second factor *existed*, so a privileged
+account that had never set one up was let through on a password while `/me` told it,
+accurately, that MFA was required of it. The predicate was tested; its enforcement was not,
+because there was none.
+
+Such an account now gets `mfa_enrollment_required` and a ticket instead of a session. The
+ticket carries its own audience — a third one, alongside the access and challenge audiences
+— so `verifyAccessToken` refuses it and the two enrollment routes are the only things it
+opens. That is deliberate: a scope claim would have to be checked by whoever receives it,
+and the check that matters is the one nobody remembers to write. Tokens are issued at the
+end of enrollment rather than on a second login, because by then the ticket has proved the
+password and the confirming code has proved possession of the device.
+
+Refusing these accounts outright would have been simpler and is what the strictest reading
+of the rule implies, but it locks out the founding administrator of every new church, who
+has nobody to enroll them.
+
 **Codes are single-use.** A TOTP code stays valid for its whole 30-second step, so the
 highest accepted counter is recorded and anything at or below it is refused. Without that, a
 code read over a shoulder or phished seconds ago still works. One consequence worth knowing:

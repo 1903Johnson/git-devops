@@ -632,6 +632,58 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /auth/mfa/enroll:
+    post:
+      operationId: beginMfaEnrollment
+      tags: [Auth]
+      summary: Start enrollment for an account that cannot sign in without a second factor
+      security: []
+      description: |
+        For a privileged account that `login` refused with `mfa_enrollment_required`.
+        Authorised by the enrollment ticket in the body rather than by a bearer token,
+        because the caller has no session and is not entitled to one until this completes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaEnrollmentRequest' }
+      responses:
+        '200':
+          description: The secret and its otpauth URI
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaEnrollmentStart' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: The ticket was invalid or has expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/mfa/enroll/confirm:
+    post:
+      operationId: confirmMfaEnrollment
+      tags: [Auth]
+      summary: Confirm enrollment and open the session that was withheld
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaEnrollmentConfirmRequest' }
+      responses:
+        '200':
+          description: Tokens, and the recovery codes shown only here
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaEnrollmentConfirmed' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: The ticket or the code was wrong.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /auth/refresh:
     post:
       operationId: refreshSession
@@ -1334,11 +1386,13 @@ components:
       oneOf:
         - $ref: '#/components/schemas/LoginSuccess'
         - $ref: '#/components/schemas/MfaChallenge'
+        - $ref: '#/components/schemas/MfaEnrollmentRequired'
       discriminator:
         propertyName: status
         mapping:
           success: '#/components/schemas/LoginSuccess'
           mfa_required: '#/components/schemas/MfaChallenge'
+          mfa_enrollment_required: '#/components/schemas/MfaEnrollmentRequired'
 
     LoginSuccess:
       type: object
@@ -1357,6 +1411,59 @@ components:
         status: { type: string, enum: [mfa_required] }
         challenge: { type: string }
         expiresInSeconds: { type: integer }
+
+    MfaEnrollmentRequired:
+      type: object
+      description: |
+        Credentials were right, this role must hold a second factor, and the account has
+        never set one up. No session is issued: the ticket is redeemable at
+        `/auth/mfa/enroll` and `/auth/mfa/enroll/confirm` and nowhere else, because it
+        carries an audience no other route accepts.
+      required: [status, enrollmentTicket, expiresInSeconds]
+      properties:
+        status: { type: string, enum: [mfa_enrollment_required] }
+        enrollmentTicket: { type: string }
+        expiresInSeconds: { type: integer }
+
+    MfaEnrollmentStart:
+      type: object
+      required: [secret, otpauthUri]
+      properties:
+        secret:
+          type: string
+          description: Base32 TOTP secret, for entering by hand when a camera will not do.
+        otpauthUri:
+          type: string
+          description: The `otpauth://` URI an authenticator app reads from a QR code.
+
+    MfaEnrollmentRequest:
+      type: object
+      required: [enrollmentTicket]
+      properties:
+        enrollmentTicket: { type: string }
+
+    MfaEnrollmentConfirmRequest:
+      type: object
+      required: [enrollmentTicket, code]
+      properties:
+        enrollmentTicket: { type: string }
+        code: { type: string }
+        deviceLabel: { type: string }
+
+    MfaEnrollmentConfirmed:
+      type: object
+      description: |
+        Enrollment succeeded and the session begins here. Issuing tokens is not a shortcut
+        past the second factor: the ticket proved the password and the code proved
+        possession of the device just enrolled.
+      required: [status, tokens, recoveryCodes]
+      properties:
+        status: { type: string, enum: [success] }
+        tokens: { $ref: '#/components/schemas/TokenPair' }
+        recoveryCodes:
+          type: array
+          description: Shown exactly once. They are not retrievable afterwards.
+          items: { type: string }
 
     CurrentUser:
       type: object

@@ -353,6 +353,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/mfa/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start enrollment for an account that cannot sign in without a second factor
+         * @description For a privileged account that `login` refused with `mfa_enrollment_required`.
+         *     Authorised by the enrollment ticket in the body rather than by a bearer token,
+         *     because the caller has no session and is not entitled to one until this completes.
+         */
+        post: operations["beginMfaEnrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/mfa/enroll/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm enrollment and open the session that was withheld */
+        post: operations["confirmMfaEnrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/refresh": {
         parameters: {
             query?: never;
@@ -908,7 +947,7 @@ export interface components {
             /** @description Lifetime of the access token, not the refresh token. */
             expiresInSeconds: number;
         };
-        LoginResult: components["schemas"]["LoginSuccess"] | components["schemas"]["MfaChallenge"];
+        LoginResult: components["schemas"]["LoginSuccess"] | components["schemas"]["MfaChallenge"] | components["schemas"]["MfaEnrollmentRequired"];
         LoginSuccess: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -929,6 +968,47 @@ export interface components {
             status: "mfa_required";
             challenge: string;
             expiresInSeconds: number;
+        };
+        /**
+         * @description Credentials were right, this role must hold a second factor, and the account has
+         *     never set one up. No session is issued: the ticket is redeemable at
+         *     `/auth/mfa/enroll` and `/auth/mfa/enroll/confirm` and nowhere else, because it
+         *     carries an audience no other route accepts.
+         */
+        MfaEnrollmentRequired: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "mfa_enrollment_required";
+            enrollmentTicket: string;
+            expiresInSeconds: number;
+        };
+        MfaEnrollmentStart: {
+            /** @description Base32 TOTP secret, for entering by hand when a camera will not do. */
+            secret: string;
+            /** @description The `otpauth://` URI an authenticator app reads from a QR code. */
+            otpauthUri: string;
+        };
+        MfaEnrollmentRequest: {
+            enrollmentTicket: string;
+        };
+        MfaEnrollmentConfirmRequest: {
+            enrollmentTicket: string;
+            code: string;
+            deviceLabel?: string;
+        };
+        /**
+         * @description Enrollment succeeded and the session begins here. Issuing tokens is not a shortcut
+         *     past the second factor: the ticket proved the password and the code proved
+         *     possession of the device just enrolled.
+         */
+        MfaEnrollmentConfirmed: {
+            /** @enum {string} */
+            status: "success";
+            tokens: components["schemas"]["TokenPair"];
+            /** @description Shown exactly once. They are not retrievable afterwards. */
+            recoveryCodes: string[];
         };
         CurrentUser: {
             /** Format: uuid */
@@ -1890,6 +1970,74 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             /** @description The code was wrong, already used, or the challenge has expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    beginMfaEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaEnrollmentRequest"];
+            };
+        };
+        responses: {
+            /** @description The secret and its otpauth URI */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaEnrollmentStart"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The ticket was invalid or has expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    confirmMfaEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaEnrollmentConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Tokens, and the recovery codes shown only here */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaEnrollmentConfirmed"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The ticket or the code was wrong. */
             401: {
                 headers: {
                     [name: string]: unknown;
