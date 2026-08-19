@@ -14,6 +14,7 @@ import {
   mfaRequiredFor,
   verifyAccessToken,
   type KeyRing,
+  type MfaVerifyResult,
 } from '../src/index.js';
 
 let pool: Pool;
@@ -77,6 +78,22 @@ beforeEach(async () => {
     client.release();
   }
 });
+
+/** See the note in session.integration.test.ts: observed contention, not a sleep. */
+async function waitForBlockedBackends(n: number, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*) AS n FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND state = 'active' AND pid <> pg_backend_pid()`,
+    );
+    if (Number(rows[0]?.n ?? 0) >= n) return;
+    if (Date.now() > deadline) {
+      throw new Error(`only ${rows[0]?.n ?? 0} of ${n} backends blocked before timeout`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 async function enrolledUser() {
   const address = email();
@@ -216,6 +233,42 @@ describe('replay and recovery', () => {
 
     expect((await mfa.verify(churchId, userId, code)).status).toBe('ok');
     expect((await mfa.verify(churchId, userId, code)).status).toBe('invalid');
+  });
+
+  it('refuses the same TOTP code to two callers arriving together', async () => {
+    // The test above proves a code is single-use in sequence. A code is valid for its whole
+    // 30-second step, though, so an attacker who captures one does not have to take turns:
+    // they present it alongside the owner. If both are validated against the same stored
+    // counter, single-use is a property of the clock rather than of the code.
+    //
+    // The overlap is forced rather than hoped for, as in the refresh rotation race: a third
+    // connection holds the credential row so both verifications read the same counter and
+    // both stall at their write.
+    const { userId, secret } = await enrolledUser();
+    const code = nextCodeFor(secret);
+
+    const credentialId = (
+      await pool.query<{ id: string }>('SELECT id FROM mfa_credential WHERE user_id = $1', [userId])
+    ).rows[0]!.id;
+
+    const blocker = await pool.connect();
+    let racing: Promise<[MfaVerifyResult, MfaVerifyResult]>;
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT id FROM mfa_credential WHERE id = $1 FOR UPDATE', [credentialId]);
+
+      racing = Promise.all([
+        mfa.verify(churchId, userId, code),
+        mfa.verify(churchId, userId, code),
+      ]);
+      await waitForBlockedBackends(2);
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined);
+      blocker.release();
+    }
+
+    const [first, second] = await racing;
+    expect([first.status, second.status].sort()).toEqual(['invalid', 'ok']);
   });
 
   it('accepts a recovery code once and never again', async () => {
