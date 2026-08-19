@@ -237,10 +237,18 @@ describe('listing', () => {
   it('sorts case-insensitively, so lowercase surnames are not exiled', async () => {
     // Ordering by last_name alone puts every lowercase surname after every uppercase one,
     // and "de Souza" ends up on the last page of the directory.
+    //
+    // The assertion brackets the D group rather than naming a neighbour, because where
+    // "de Souza" falls *within* it is the database's collation talking, not ours: glibc's
+    // en_US.UTF-8 ignores the space at the primary level and compares "desouza", putting it
+    // after "Delta", while C and ICU weigh the space and put it before. Both satisfy the
+    // property this test exists for; asserting either one pins CI to a locale.
     await newPerson('Ella', 'de Souza');
+    await newPerson('Eve', 'Everett');
     const page = await asTenant((tx) => people.list(tx, staff, { limit: 100 }));
     const names = page.data.map((p) => p.lastName);
-    expect(names.indexOf('de Souza')).toBeLessThan(names.indexOf('Delta'));
+    expect(names.indexOf('de Souza')).toBeGreaterThan(names.indexOf('Charlie'));
+    expect(names.indexOf('de Souza')).toBeLessThan(names.indexOf('Everett'));
   });
 });
 
