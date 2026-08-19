@@ -938,7 +938,18 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 200 }
         timezone: { type: string }
-        isPrimary: { type: boolean, default: false }
+        isPrimary:
+          type: boolean
+          description: |
+            Whether this becomes the church's primary campus, stepping the previous one
+            down. Omit for false.
+
+            Deliberately no `default:` here. A defaulted property is generated as
+            *required* in the TypeScript types — a client following this contract would
+            omit it, as the `required` list above says it may, and fail to compile. Defaults
+            on request bodies belong in the server, and in prose like this.
+
+            Response schemas may still carry `default:`, where "always present" is true.
 
     CampusUpdate:
       type: object

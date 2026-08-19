@@ -2,7 +2,9 @@ import { Inject, Injectable, Logger, Module, type OnApplicationBootstrap } from 
 import type { Pool } from 'pg';
 import { type LoadedModule, loadModules, syncModuleDefinitions } from '@church/module-kit';
 import { registerPermissions, type Permission } from '@church/policy';
+import { CampusService, ChurchService } from '@church/church';
 import { AuditController } from './audit/audit.controller.js';
+import { ChurchController } from './church/church.controller.js';
 import { AuthController } from './auth/auth.controller.js';
 import { AuthService } from './auth/auth.service.js';
 import { ModulesController } from './module-admin/modules.controller.js';
@@ -68,8 +70,10 @@ export class ModuleBootstrap implements OnApplicationBootstrap {
     ModuleBootstrap,
     ModulesService,
     AuthService,
+    ChurchService,
+    CampusService,
   ],
-  controllers: [ModulesController, AuthController, AuditController],
+  controllers: [ModulesController, AuthController, AuditController, ChurchController],
   exports: [LOADED_MODULES],
 })
 export class ModulesModule {}
