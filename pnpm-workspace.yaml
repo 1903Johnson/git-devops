@@ -30,6 +30,30 @@ catalog:
   'jose': ^6.2.9
   'typescript': ^5.6.3
 
+  # apps/admin-web (DEP-002). Next.js is the framework docs/01 §1 and docs/03 §1 specify
+  # for the pastor/admin app. Its App Router is the routing WEB-010 needs, so no separate
+  # router package joins the window — adding one would mean two routers disagreeing about
+  # what a URL means.
+  #
+  # Nothing references these yet; WEB-010 is what puts `"next": "catalog:"` into a package
+  # and locks them. They were verified before landing, against a scratch workspace package
+  # that was removed again, and these are the four things that verification settled:
+  #
+  #   - 16.3.1 peers on react ^18.2 || ^19.0, satisfied by the React DEP-001 catalogued,
+  #     and needs node >=20.9 against the repo's 22. It builds an App Router page against
+  #     that React, so the pairing is tested rather than merely compatible on paper.
+  #   - `pnpm audit --audit-level high`, which the CI security job gates on, is clean
+  #     across the whole Next tree.
+  #   - Installing eslint-config-next prints "Ignored build scripts: unrs-resolver".
+  #     It is noise, not a problem, and does NOT belong in onlyBuiltDependencies below:
+  #     the postinstall only exists as a fallback, and the platform binding arrives as an
+  #     optional dependency that pnpm installs anyway. Verified by loading the module.
+  #   - Both eslint-config-next entry points export a flat-config ARRAY, not a function.
+  #     `import next from 'eslint-config-next/core-web-vitals'` then spread it; calling it
+  #     fails with "not a function or its return value is not iterable".
+  'next': ^16.3.1
+  'eslint-config-next': ^16.3.1
+
   # apps/api. NestJS is the framework docs/01 and docs/03 specify; these are the pieces
   # of it the API actually uses, plus SWC. SWC rather than esbuild for this one package
   # because Nest resolves constructor injection from decorator metadata, which esbuild
