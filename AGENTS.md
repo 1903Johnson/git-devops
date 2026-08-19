@@ -143,3 +143,4 @@ areas is how this product hurts someone.
 | `docs/03-repo-and-workflow.md` | Repo layout, ownership, CI pipeline |
 | `docs/04-delivery-plan.md` | Sprint plan and per-ticket ownership |
 | `docs/05-agent-prompts.md` | Ready-to-use ticket prompts |
+| `docs/tasks/SEC-REVIEW.md` | Codex's standing review brief — its only task |
