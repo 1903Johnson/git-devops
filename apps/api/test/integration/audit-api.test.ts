@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { APP_ROLE, ensureAppRole } from '@church/testing';
 import { CORE_MIGRATIONS_DIR, applyMigrations, collectMigrations } from '@church/migrations';
 import { loadModules, syncModuleDefinitions } from '@church/module-kit';
-import { IdentityService } from '@church/identity';
+import { IdentityService, counterFor, fromBase32, generateCode } from '@church/identity';
 import { createTestApp, tokenFor, type TestApp } from '../support/app.js';
 
 const FIXTURES = new URL('../../../../packages/module-kit/test/fixtures/', import.meta.url)
@@ -151,8 +151,19 @@ describe('entries written by real requests', () => {
       client.release();
     }
 
+    // CHURCH_ADMIN must hold a second factor, so the session begins at the end of
+    // enrollment rather than at login (REV-004) — and the sign-in has to be audited from
+    // there just the same, which is the half of that path this test now covers.
     const login = await request('POST', '/auth/login', undefined, { email, password: PASSWORD });
-    const token = (login.body.tokens as { accessToken: string }).accessToken;
+    expect(login.body.status).toBe('mfa_enrollment_required');
+    const enrollmentTicket = login.body.enrollmentTicket as string;
+
+    const started = await request('POST', '/auth/mfa/enroll', undefined, { enrollmentTicket });
+    const confirmed = await request('POST', '/auth/mfa/enroll/confirm', undefined, {
+      enrollmentTicket,
+      code: generateCode(fromBase32((started.body as { secret: string }).secret), counterFor()),
+    });
+    const token = (confirmed.body.tokens as { accessToken: string }).accessToken;
 
     const { body } = await request(
       'GET',

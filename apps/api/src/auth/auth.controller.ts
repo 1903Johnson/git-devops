@@ -16,11 +16,19 @@ import type {
   CurrentUser,
   LoginRequest,
   LoginResult,
+  MfaEnrollmentConfirmRequest,
+  MfaEnrollmentConfirmed,
+  MfaEnrollmentRequest,
+  MfaEnrollmentStart,
   MfaRequest,
   RefreshRequest,
   TokenPair,
 } from '@church/contracts';
-import { MFA_CHALLENGE_TTL_SECONDS, type SessionResult } from '@church/identity';
+import {
+  ENROLLMENT_TICKET_TTL_SECONDS,
+  MFA_CHALLENGE_TTL_SECONDS,
+  type SessionResult,
+} from '@church/identity';
 import { currentTenant } from '@church/tenancy';
 import { Authenticated } from '../common/authenticated.decorator.js';
 import { Public } from '../common/public.decorator.js';
@@ -61,6 +69,45 @@ export class AuthController {
     const presented = this.presentSession(result, reply);
     await this.auditLogin(presented);
     return presented;
+  }
+
+  /**
+   * Both enrollment routes are `@Public()` and authorised by the ticket in the body. That
+   * is the point of the ticket: the caller has been refused a session and must not be
+   * handed anything a bearer token would open.
+   */
+  @Public()
+  @Post('auth/mfa/enroll')
+  @HttpCode(HttpStatus.OK)
+  async beginMfaEnrollment(@Body() body: MfaEnrollmentRequest): Promise<MfaEnrollmentStart> {
+    if (!body?.enrollmentTicket) throw new BadRequestException('enrollmentTicket is required');
+    const started = await this.auth.sessions.beginEnrollment(body.enrollmentTicket);
+    if (!started) throw new UnauthorizedException('Invalid or expired enrollment ticket');
+    return { secret: started.secret, otpauthUri: started.otpauthUri };
+  }
+
+  @Public()
+  @Post('auth/mfa/enroll/confirm')
+  @HttpCode(HttpStatus.OK)
+  async confirmMfaEnrollment(
+    @Body() body: MfaEnrollmentConfirmRequest,
+  ): Promise<MfaEnrollmentConfirmed> {
+    if (!body?.enrollmentTicket || !body?.code) {
+      throw new BadRequestException('enrollmentTicket and code are required');
+    }
+    const result = await this.auth.sessions.completeEnrollment(
+      body.enrollmentTicket,
+      body.code,
+      body.deviceLabel,
+    );
+    if (result.status !== 'success') throw new UnauthorizedException('Enrollment failed');
+
+    await this.auth.recordLogin(result.tokens.accessToken);
+    return {
+      status: 'success',
+      tokens: result.tokens,
+      recoveryCodes: [...result.recoveryCodes],
+    };
   }
 
   @Public()
@@ -137,6 +184,12 @@ export class AuthController {
           status: 'mfa_required',
           challenge: result.challenge,
           expiresInSeconds: MFA_CHALLENGE_TTL_SECONDS,
+        };
+      case 'mfa_enrollment_required':
+        return {
+          status: 'mfa_enrollment_required',
+          enrollmentTicket: result.enrollmentTicket,
+          expiresInSeconds: ENROLLMENT_TICKET_TTL_SECONDS,
         };
       case 'locked': {
         // Round up: a Retry-After of 0 invites an immediate retry that will also fail.

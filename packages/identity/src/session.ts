@@ -7,12 +7,19 @@ import { IdentityService, type LoginResult } from './service.js';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   issueAccessToken,
+  issueEnrollmentTicket,
   issueMfaChallenge,
+  verifyEnrollmentTicket,
   verifyMfaChallenge,
   type AccessTokenClaims,
   type KeyRing,
 } from './jwt.js';
-import type { MfaService } from './mfa.js';
+import {
+  mfaRequiredFor,
+  type ConfirmResult,
+  type EnrollmentChallenge,
+  type MfaService,
+} from './mfa.js';
 import {
   decideRefresh,
   generateRefreshSecret,
@@ -39,6 +46,14 @@ export type SessionResult =
   | { readonly status: 'success'; readonly tokens: TokenPair; readonly userId: string }
   /** Credentials were right; a second factor is still owed. */
   | { readonly status: 'mfa_required'; readonly challenge: string }
+  /**
+   * Credentials were right, this role must hold a second factor, and there is none to
+   * ask for. The ticket reaches the enrollment routes and nothing else.
+   */
+  | {
+      readonly status: 'mfa_enrollment_required';
+      readonly enrollmentTicket: string;
+    }
   | { readonly status: 'invalid' }
   | { readonly status: 'locked'; readonly retryAfterMs: number }
   | { readonly status: 'disabled' };
@@ -91,6 +106,27 @@ export class SessionService {
       return {
         status: 'mfa_required',
         challenge: await issueMfaChallenge(
+          { sub: context.userId, church_id: context.churchId },
+          this.#keys,
+        ),
+      };
+    }
+
+    // Not enrolled — but for these roles that is a reason to stop, not to continue.
+    // `mfaRequiredFor` named STAFF, PASTOR, CAMPUS_ADMIN and CHURCH_ADMIN from the day MFA
+    // shipped, and nothing consulted it: the gate above asks only whether a second factor
+    // exists, so a privileged account that never set one up was let straight through on a
+    // password while `/me` told it, accurately, that MFA was required of it.
+    //
+    // Refusing outright would lock out the first administrator of every new church, who has
+    // no one to enroll them. So the account gets a ticket redeemable for enrollment alone.
+    const roles = await runWithTenant({ churchId: context.churchId }, () =>
+      this.#db.transaction((tx) => this.#loadRoles(tx, context.userId)),
+    );
+    if (this.#mfa && mfaRequiredFor(roles.roles)) {
+      return {
+        status: 'mfa_enrollment_required',
+        enrollmentTicket: await issueEnrollmentTicket(
           { sub: context.userId, church_id: context.churchId },
           this.#keys,
         ),
@@ -209,6 +245,82 @@ export class SessionService {
       this.#issuePair(claims.sub, claims.church_id, crypto.randomUUID(), deviceLabel),
     );
     return { status: 'success', tokens, userId: claims.sub };
+  }
+
+  /**
+   * Starts enrollment for an account that cannot log in until it has a second factor.
+   *
+   * The ticket stands in for the session this account is not allowed to have yet.
+   */
+  async beginEnrollment(ticket: string): Promise<EnrollmentChallenge | undefined> {
+    if (!this.#mfa) return undefined;
+    let claims;
+    try {
+      claims = await verifyEnrollmentTicket(ticket, this.#keys);
+    } catch {
+      return undefined;
+    }
+    // The authenticator app shows this label, so it has to be something the user
+    // recognises among the other codes on their phone.
+    const account = await this.#db.unsafeCrossTenantTransaction(
+      'enrollment: labelling the authenticator entry for a user who has no session yet',
+      async (client: PoolClient) => {
+        const { rows } = await client.query<{ email: string }>(
+          'SELECT email FROM app_user WHERE id = $1',
+          [claims.sub],
+        );
+        return rows[0]?.email;
+      },
+    );
+    if (!account) return undefined;
+    return this.#mfa.beginEnrollment(claims.church_id, claims.sub, account);
+  }
+
+  /**
+   * Confirms enrollment and opens the session the account was refused at login.
+   *
+   * Issuing tokens here is not a shortcut around the second factor — it is the second
+   * factor: the ticket proves the password and the code proves possession of the device
+   * just enrolled. Making them log in again would prove nothing further.
+   */
+  async completeEnrollment(
+    ticket: string,
+    code: string,
+    deviceLabel?: string,
+  ): Promise<
+    | {
+        readonly status: 'success';
+        readonly tokens: TokenPair;
+        readonly userId: string;
+        readonly recoveryCodes: readonly string[];
+      }
+    | { readonly status: 'invalid' }
+  > {
+    if (!this.#mfa) return { status: 'invalid' };
+
+    let claims;
+    try {
+      claims = await verifyEnrollmentTicket(ticket, this.#keys);
+    } catch {
+      return { status: 'invalid' };
+    }
+
+    const confirmed: ConfirmResult = await this.#mfa.confirmEnrollment(
+      claims.church_id,
+      claims.sub,
+      code,
+    );
+    if (confirmed.status !== 'confirmed') return { status: 'invalid' };
+
+    const tokens = await runWithTenant({ churchId: claims.church_id }, () =>
+      this.#issuePair(claims.sub, claims.church_id, crypto.randomUUID(), deviceLabel),
+    );
+    return {
+      status: 'success',
+      tokens,
+      userId: claims.sub,
+      recoveryCodes: confirmed.recoveryCodes,
+    };
   }
 
   /** Ends one session — the device that holds this token, and nothing else. */

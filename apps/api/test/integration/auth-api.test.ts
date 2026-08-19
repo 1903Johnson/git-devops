@@ -48,6 +48,36 @@ const identity = () =>
 
 const newEmail = () => `auth-${Math.random().toString(36).slice(2)}@example.org`;
 
+/**
+ * Signs in over HTTP, enrolling a second factor when the account's role demands one.
+ *
+ * A privileged role cannot reach a session on a password alone (REV-004), so a test that
+ * wants a STAFF token has to go the way a real STAFF user does. Six tests here used to get
+ * one for free, which is how the missing gate stayed invisible: the suite had the defect
+ * written into it as the expected result.
+ */
+async function signIn(email: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const login = await post('/auth/login', { email, password: PASSWORD });
+  if (login.body.status === 'success') {
+    return login.body.tokens as { accessToken: string; refreshToken: string };
+  }
+  if (login.body.status !== 'mfa_enrollment_required') {
+    throw new Error(`unexpected login status: ${String(login.body.status)}`);
+  }
+
+  const enrollmentTicket = login.body.enrollmentTicket as string;
+  const started = await post('/auth/mfa/enroll', { enrollmentTicket });
+  const secret = (started.body as { secret: string }).secret;
+  const confirmed = await post('/auth/mfa/enroll/confirm', {
+    enrollmentTicket,
+    code: generateCode(fromBase32(secret), counterFor()),
+  });
+  if (confirmed.status !== 200) {
+    throw new Error(`enrollment failed: ${confirmed.status} ${JSON.stringify(confirmed.body)}`);
+  }
+  return (confirmed.body as { tokens: { accessToken: string; refreshToken: string } }).tokens;
+}
+
 async function newUser(roles: string[] = []): Promise<{ email: string; userId: string }> {
   const email = newEmail();
   const created = await identity().register(church, email, PASSWORD);
@@ -102,7 +132,8 @@ beforeEach(async () => {
 
 describe('login', () => {
   it('issues a usable token pair', async () => {
-    const { email } = await newUser(['STAFF']);
+    // MEMBER: outside MFA_REQUIRED_ROLES, so a password is the whole story for them.
+    const { email } = await newUser(['MEMBER']);
     const { status, body } = await post('/auth/login', { email, password: PASSWORD });
     expect(status).toBe(200);
     expect(body.status).toBe('success');
@@ -111,13 +142,30 @@ describe('login', () => {
     expect(tokens.expiresInSeconds).toBe(900);
   });
 
+  it('withholds the session from a privileged account with no second factor', async () => {
+    const { email } = await newUser(['STAFF']);
+    const { status, body } = await post('/auth/login', { email, password: PASSWORD });
+    expect(status).toBe(200);
+    expect(body.status).toBe('mfa_enrollment_required');
+    expect(body.tokens).toBeUndefined();
+
+    // And the ticket opens nothing else. It carries an audience the guard does not accept,
+    // so this holds without any route having to know what an enrollment ticket is.
+    expect((await get('/probe/tenant', body.enrollmentTicket as string)).status).toBe(401);
+  });
+
+  it('lets that account enrol and then signs it in', async () => {
+    const { email } = await newUser(['STAFF']);
+    const tokens = await signIn(email);
+    expect((await get('/probe/tenant', tokens.accessToken)).status).toBe(200);
+  });
+
   it('produces a token the API actually accepts', async () => {
     // The whole point of the ticket: before this, nothing could mint a token the guard
     // would take, so every authenticated route was unreachable.
     const { email } = await newUser(['STAFF']);
-    const login = await post('/auth/login', { email, password: PASSWORD });
-    const token = (login.body.tokens as { accessToken: string }).accessToken;
-    expect((await get('/probe/tenant', token)).status).toBe(200);
+    const { accessToken } = await signIn(email);
+    expect((await get('/probe/tenant', accessToken)).status).toBe(200);
   });
 
   it('carries the roles, so permission-guarded routes work', async () => {
@@ -126,16 +174,8 @@ describe('login', () => {
     const staff = await newUser(['STAFF']);
     const nobody = await newUser([]);
 
-    const staffToken = (
-      (await post('/auth/login', { email: staff.email, password: PASSWORD })).body.tokens as {
-        accessToken: string;
-      }
-    ).accessToken;
-    const nobodyToken = (
-      (await post('/auth/login', { email: nobody.email, password: PASSWORD })).body.tokens as {
-        accessToken: string;
-      }
-    ).accessToken;
+    const { accessToken: staffToken } = await signIn(staff.email);
+    const { accessToken: nobodyToken } = await signIn(nobody.email);
 
     expect((await get('/probe/tenant', staffToken)).status).toBe(200);
     expect((await get('/probe/tenant', nobodyToken)).status).toBe(403);
@@ -235,8 +275,10 @@ describe('logout', () => {
   });
 
   it('ends every session on logout-all, and leaves other users alone', async () => {
-    const { email } = await newUser(['STAFF']);
-    const other = await newUser(['STAFF']);
+    // MEMBER accounts, because this is about how many sessions logout-all ends rather than
+    // about privilege, and a second factor on every login would only be scenery.
+    const { email } = await newUser(['MEMBER']);
+    const other = await newUser(['MEMBER']);
     const phone = await post('/auth/login', { email, password: PASSWORD, deviceLabel: 'phone' });
     const laptop = await post('/auth/login', { email, password: PASSWORD, deviceLabel: 'laptop' });
     const bystander = await post('/auth/login', { email: other.email, password: PASSWORD });
@@ -262,12 +304,14 @@ describe('logout', () => {
 describe('the current user', () => {
   it('reports identity, roles and expanded permissions', async () => {
     const { email } = await newUser(['STAFF']);
-    const login = await post('/auth/login', { email, password: PASSWORD });
-    const token = (login.body.tokens as { accessToken: string }).accessToken;
+    const { accessToken } = await signIn(email);
 
-    const { status, body } = await get('/me', token);
+    const { status, body } = await get('/me', accessToken);
     expect(status).toBe(200);
-    expect(body).toMatchObject({ email, churchId: church, roles: ['STAFF'], mfaEnrolled: false });
+    // mfaEnrolled is true because it now has to be: a STAFF account holding a session has
+    // necessarily enrolled. The pair this used to assert — required and not enrolled, with
+    // a working token — is the state REV-004 made unreachable.
+    expect(body).toMatchObject({ email, churchId: church, roles: ['STAFF'], mfaEnrolled: true });
     expect(body.permissions).toContain('person:read');
     expect(body.mfaRequired).toBe(true);
   });

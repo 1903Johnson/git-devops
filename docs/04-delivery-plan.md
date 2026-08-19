@@ -41,7 +41,7 @@ second build queue — nothing blocks another agent any more, only itself.
 | CORE-012 | `packages/contracts` bootstrap: OpenAPI pipeline, type generation, `packages/sdk` codegen | **C** |
 | CORE-013 🔒 | Identity: registration, login, password policy, breach-list check, lockout | **C** |
 | CORE-014 🔒 | JWT access + rotating refresh tokens, token-family revocation table, "log out all devices" | **C** |
-| CORE-015 🔒 | MFA (TOTP) — enforced for STAFF/PASTOR/ADMIN roles | **C** |
+| CORE-015 🔒 | MFA (TOTP) for STAFF/PASTOR/ADMIN roles — *enforcement* landed later, in REV-004 | **C** |
 | CORE-016 | Church & Campus services (`@church/church`) — HTTP layer deferred until `apps/api` exists | **C** |
 | CORE-017a 🔒 | People/family contract + migration: OpenAPI shapes, RLS, tenant-carrying foreign keys | **C** |
 | CORE-017 | Person & Family services, membership status history, milestones (against CORE-017a) | **C** |
@@ -256,12 +256,23 @@ fixed or in hand. Its third was new and is the most valuable finding either pass
 
 | ID | From | Severity | What | Status |
 |---|---|---|---|---|
-| REV-004 | pass 2, SEC-001 | high | `mfaRequiredFor()` gates nothing. Login challenges only users already *enrolled*, so a privileged account that never enrolled signs in with a password alone — while `/me` truthfully reports `mfaRequired: true` to it | open |
+| REV-004 | pass 2, SEC-001 | high | `mfaRequiredFor()` gated nothing. Login challenged only users already *enrolled*, so a privileged account that never enrolled signed in with a password alone — while `/me` truthfully reported `mfaRequired: true` to it | **fixed** |
 
-REV-004 is the one no test could have caught, because the tests assert the predicate
-rather than its enforcement: `mfaRequiredFor` is called in exactly two places, a unit test
+REV-004 is the one no test could have caught, because the tests asserted the predicate
+rather than its enforcement: `mfaRequiredFor` was called in exactly two places, a unit test
 and a `/me` response field. CORE-015 is recorded above as shipping MFA "enforced for
-STAFF/PASTOR/ADMIN roles". It did not.
+STAFF/PASTOR/ADMIN roles". It did not — the row now says so.
+
+It is closed by an enrollment-only session: login answers `mfa_enrollment_required` with a
+ticket carrying its own audience, redeemable at the two enrollment routes and refused
+everywhere else. Turning such an account away instead would lock out the founding
+administrator of every new church, who has nobody to enroll them.
+
+**Six existing tests failed the moment the gate went in**, because they signed a privileged
+account in on a password alone and took the tokens. That is the clearest measure of the
+defect: the suite had it written in as the expected result, so no amount of running the
+tests would ever have surfaced it. They now go the way a real STAFF user does, through
+enrollment over HTTP, which incidentally covers the new routes end to end.
 
 Two things pass 1 is worth remembering for:
 

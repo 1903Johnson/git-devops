@@ -47,9 +47,23 @@ const AUDIENCE = 'church-platform-api';
  * rather than merely unlikely.
  */
 const MFA_AUDIENCE = 'church-platform-mfa';
+/**
+ * Third audience, for a privileged account that owes a second factor it has never set up.
+ *
+ * The same reasoning as the challenge above, one step earlier. Such an account cannot be
+ * handed a session — its password is the only thing standing in front of children's and
+ * pastoral records — but it cannot be turned away either, or the first administrator of a
+ * new church could never get in. So it gets a ticket that buys exactly one thing: the
+ * enrollment routes. Every other route verifies against the API audience and will not
+ * accept it, which is what makes "enrollment only" a property of the token rather than a
+ * rule someone has to remember to apply.
+ */
+const ENROLLMENT_AUDIENCE = 'church-platform-mfa-enrollment';
 const ALGORITHM = 'HS256';
 
 export const MFA_CHALLENGE_TTL_SECONDS = 5 * 60;
+/** Longer than a challenge: enrolling means installing an app and scanning a code. */
+export const ENROLLMENT_TICKET_TTL_SECONDS = 15 * 60;
 
 export class InvalidAccessTokenError extends Error {
   constructor(reason: string) {
@@ -169,5 +183,62 @@ export async function verifyMfaChallenge(
 
   throw new InvalidAccessTokenError(
     lastError instanceof Error ? lastError.message : 'no key accepted the challenge',
+  );
+}
+
+export interface EnrollmentTicketClaims {
+  readonly sub: string;
+  readonly church_id: string;
+}
+
+/**
+ * Proof that a privileged account's password was verified, redeemable only for enrollment.
+ *
+ * Deliberately not an access token with a narrow scope claim: a scope has to be checked by
+ * whoever receives it, and the check that matters is the one nobody remembers to write.
+ * A separate audience is refused by `verifyAccessToken` without anyone deciding anything.
+ */
+export async function issueEnrollmentTicket(
+  claims: EnrollmentTicketClaims,
+  keys: KeyRing,
+  ttlSeconds: number = ENROLLMENT_TICKET_TTL_SECONDS,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({ church_id: claims.church_id })
+    .setProtectedHeader({ alg: ALGORITHM, kid: keys.active.kid })
+    .setSubject(claims.sub)
+    .setIssuer(ISSUER)
+    .setAudience(ENROLLMENT_AUDIENCE)
+    .setIssuedAt(now)
+    .setExpirationTime(now + ttlSeconds)
+    .sign(keys.active.secret);
+}
+
+export async function verifyEnrollmentTicket(
+  token: string,
+  keys: KeyRing,
+): Promise<EnrollmentTicketClaims> {
+  const candidates = [keys.active, ...(keys.accepted ?? [])];
+  let lastError: unknown;
+
+  for (const key of candidates) {
+    try {
+      const { payload } = await jwtVerify(token, key.secret, {
+        issuer: ISSUER,
+        audience: ENROLLMENT_AUDIENCE,
+        algorithms: [ALGORITHM],
+      });
+      if (typeof payload.sub !== 'string' || typeof payload['church_id'] !== 'string') {
+        throw new InvalidAccessTokenError('enrollment ticket missing sub or church_id');
+      }
+      return { sub: payload.sub, church_id: payload['church_id'] as string };
+    } catch (error) {
+      if (error instanceof InvalidAccessTokenError) throw error;
+      lastError = error;
+    }
+  }
+
+  throw new InvalidAccessTokenError(
+    lastError instanceof Error ? lastError.message : 'no key accepted the enrollment ticket',
   );
 }
