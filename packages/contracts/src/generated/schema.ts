@@ -65,6 +65,171 @@ export interface paths {
         patch: operations["updateCampus"];
         trace?: never;
     };
+    "/churches/{churchId}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        /** List people in a church */
+        get: operations["listPeople"];
+        put?: never;
+        /** Create a person */
+        post: operations["createPerson"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/people/{personId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        /** Fetch a person */
+        get: operations["getPerson"];
+        put?: never;
+        post?: never;
+        /**
+         * Archive a person
+         * @description Archives rather than deletes. Giving and attendance history reference people, and a
+         *     hard delete would silently rewrite the past. Erasure is a separate, deliberate
+         *     request under the data-privacy workflow.
+         */
+        delete: operations["archivePerson"];
+        options?: never;
+        head?: never;
+        /** Update a person */
+        patch: operations["updatePerson"];
+        trace?: never;
+    };
+    "/people/{personId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        /** A person's membership history */
+        get: operations["listStatusHistory"];
+        put?: never;
+        /** Record a membership status change */
+        post: operations["changeStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/people/{personId}/milestones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        /** A person's milestones */
+        get: operations["listMilestones"];
+        put?: never;
+        /** Record a milestone */
+        post: operations["recordMilestone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/churches/{churchId}/families": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        /** List families */
+        get: operations["listFamilies"];
+        put?: never;
+        /** Create a family */
+        post: operations["createFamily"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/families/{familyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        /** Fetch a family and its members */
+        get: operations["getFamily"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename a family */
+        patch: operations["updateFamily"];
+        trace?: never;
+    };
+    "/families/{familyId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a person to a family */
+        post: operations["addFamilyMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/families/{familyId}/members/{personId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a person from a family */
+        delete: operations["removeFamilyMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -142,6 +307,249 @@ export interface components {
             timezone?: string;
             isPrimary?: boolean;
         };
+        /**
+         * @description Flat rather than free-text: check-in signage, mail merges, and tax receipts all need
+         *     the parts separately, and splitting a single string back apart is lossy.
+         */
+        Address: {
+            line1?: string;
+            line2?: string;
+            city?: string;
+            /** @description State, province, or county — whatever the country calls it. */
+            region?: string;
+            postalCode?: string;
+            /** @description ISO 3166-1 alpha-2, matching the church's own country code. */
+            country?: string;
+        };
+        /**
+         * @description Where someone stands with this congregation. `transferred` means they left for
+         *     another church rather than drifted away, which is a different pastoral fact from
+         *     `inactive` and is why the two are separate values.
+         * @enum {string}
+         */
+        MembershipStatus: "visitor" | "attendee" | "member" | "inactive" | "transferred";
+        /**
+         * @description The platform's central record. A Person is not a login: children and visitors are
+         *     Person records with no account at all, so nothing may assume a `User` exists for one.
+         */
+        Person: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            churchId: string;
+            /**
+             * Format: uuid
+             * @description The campus this person calls home. Absent for a single-site church.
+             */
+            campusId?: string | null;
+            firstName: string;
+            lastName: string;
+            /** @description What they are actually called. Display this in preference to `firstName`. */
+            preferredName?: string;
+            /**
+             * @description Free text, not an enum. Churches record this for ministry grouping, and fixing
+             *     the permitted values in a contract would be a product decision smuggled into a
+             *     schema.
+             */
+            gender?: string;
+            /**
+             * Format: date
+             * @description Optional, and minor PII. Children's check-in grades by age, so this is stored
+             *     in the clear and covered by the retention policy rather than by encryption.
+             */
+            dateOfBirth?: string;
+            /**
+             * Format: email
+             * @description Not unique, on purpose. A child's contact address is usually a parent's, and
+             *     families routinely share one — uniqueness here would reject the most ordinary
+             *     household in the congregation.
+             */
+            email?: string;
+            phone?: string;
+            address?: components["schemas"]["Address"];
+            /** Format: uri */
+            photoUrl?: string;
+            status: components["schemas"]["MembershipStatus"];
+            /**
+             * Format: date-time
+             * @description Set when archived. Archived people are excluded from directories.
+             */
+            archivedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /**
+         * @description `churchId` is absent by design: it comes from the authenticated tenant context, so a
+         *     client cannot create a person inside another church by naming one.
+         */
+        PersonCreate: {
+            /** Format: uuid */
+            campusId?: string;
+            firstName: string;
+            lastName: string;
+            preferredName?: string;
+            gender?: string;
+            /** Format: date */
+            dateOfBirth?: string;
+            /** Format: email */
+            email?: string;
+            phone?: string;
+            address?: components["schemas"]["Address"];
+            /** Format: uri */
+            photoUrl?: string;
+            /**
+             * @description The starting status, recorded as the first entry in the membership history.
+             *     Defaults to `visitor`.
+             */
+            status?: components["schemas"]["MembershipStatus"];
+        };
+        /**
+         * @description `status` and `archivedAt` are absent by design. Status moves only through
+         *     `POST /people/{personId}/status`, which appends to the history in the same
+         *     transaction; allowing it here would let a client change someone's standing with no
+         *     record of who did it or why. Archiving is `DELETE /people/{personId}`.
+         */
+        PersonUpdate: {
+            /** Format: uuid */
+            campusId?: string | null;
+            firstName?: string;
+            lastName?: string;
+            preferredName?: string | null;
+            gender?: string | null;
+            /** Format: date */
+            dateOfBirth?: string | null;
+            /** Format: email */
+            email?: string | null;
+            phone?: string | null;
+            address?: components["schemas"]["Address"];
+            /** Format: uri */
+            photoUrl?: string | null;
+        };
+        /**
+         * @description One entry in an append-only history. Entries are never edited or removed: "attended
+         *     for two years, then joined" and "transferred in last month" are different facts, and
+         *     overwriting a status erases the difference.
+         */
+        MembershipStatusChange: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            personId: string;
+            status: components["schemas"]["MembershipStatus"];
+            /** Format: date-time */
+            changedAt: string;
+            /**
+             * Format: uuid
+             * @description The user who recorded the change, not the person it is about. Null when the
+             *     change came from an import or the acting user has since been deleted.
+             */
+            changedBy?: string | null;
+            note?: string;
+        };
+        /**
+         * @description Sacraments and rites. Denominations disagree about which of these are sacraments;
+         *     the platform records the event and stays out of the argument.
+         * @enum {string}
+         */
+        MilestoneType: "baptism" | "confirmation" | "membership_class" | "marriage" | "dedication";
+        Milestone: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            churchId: string;
+            /** Format: uuid */
+            personId: string;
+            /**
+             * Format: uuid
+             * @description Where it happened, which is not always the person's home campus.
+             */
+            campusId?: string | null;
+            type: components["schemas"]["MilestoneType"];
+            /**
+             * Format: date
+             * @description A date, not a timestamp. These are historical records — a baptism in 1974 has a
+             *     date and no defensible time of day.
+             */
+            occurredOn: string;
+            officiant?: string;
+            notes?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /**
+         * @description `personId` comes from the path and `churchId` from the tenant context, so neither is
+         *     accepted in the body.
+         */
+        MilestoneCreate: {
+            type: components["schemas"]["MilestoneType"];
+            /** Format: date */
+            occurredOn: string;
+            /** Format: uuid */
+            campusId?: string;
+            officiant?: string;
+            notes?: string;
+        };
+        /**
+         * @description The relationship of a person to their household. **This is not an authorisation.**
+         *     `parent` or `guardian` here says nothing about who may collect a child at check-in —
+         *     that is a separate, explicit `GuardianAuthorisation` owned by the children's check-in
+         *     module (docs/02 §5). A custody order can leave a parent on this list and off that
+         *     one, so no caller may substitute one for the other.
+         * @enum {string}
+         */
+        FamilyRelationship: "parent" | "guardian" | "child" | "spouse" | "other";
+        FamilyMember: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            familyId: string;
+            /** Format: uuid */
+            personId: string;
+            relationship: components["schemas"]["FamilyRelationship"];
+            /**
+             * @description Embedded so a household view renders in one call. Present on
+             *     `GET /families/{familyId}`; omitted where the caller already has the person.
+             */
+            person?: components["schemas"]["Person"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        FamilyMemberCreate: {
+            /** Format: uuid */
+            personId: string;
+            relationship: components["schemas"]["FamilyRelationship"];
+        };
+        /**
+         * @description A household. Membership is many-to-many: a person belongs to more than one family
+         *     after a remarriage, and an adult child appears in both their parents' household and
+         *     their own. Forcing a single family per person would make the platform take a side in
+         *     a real pastoral situation.
+         */
+        Family: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            churchId: string;
+            name: string;
+            /** @description Present on `GET /families/{familyId}`; omitted from list responses. */
+            members?: components["schemas"]["FamilyMember"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /**
+         * @description `churchId` is absent by design — it comes from the tenant context. Members may be
+         *     supplied here so that creating a household is one call rather than one per person.
+         */
+        FamilyCreate: {
+            name: string;
+            members?: components["schemas"]["FamilyMemberCreate"][];
+        };
     };
     responses: {
         /** @description The request was malformed or failed validation */
@@ -187,6 +595,8 @@ export interface components {
     parameters: {
         ChurchId: string;
         CampusId: string;
+        PersonId: string;
+        FamilyId: string;
         Limit: number;
         /** @description Opaque cursor from a previous response's `page.nextCursor`. */
         Cursor: string;
@@ -385,6 +795,438 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listPeople: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor from a previous response's `page.nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                status?: components["schemas"]["MembershipStatus"];
+                campusId?: string;
+                /** @description Archived people are excluded by default; directories should not list them. */
+                includeArchived?: boolean;
+            };
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Person"][];
+                        page: components["schemas"]["PageInfo"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPerson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonCreate"];
+            };
+        };
+        responses: {
+            /** @description The created person */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Person"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getPerson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The person */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Person"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    archivePerson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updatePerson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated person */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Person"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listStatusHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every recorded status change, most recent first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipStatusChange"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    changeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    status: components["schemas"]["MembershipStatus"];
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The recorded change */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipStatusChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMilestones: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Milestones, most recent first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Milestone"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordMilestone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MilestoneCreate"];
+            };
+        };
+        responses: {
+            /** @description The recorded milestone */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Milestone"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listFamilies: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor from a previous response's `page.nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of families */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Family"][];
+                        page: components["schemas"]["PageInfo"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createFamily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                churchId: components["parameters"]["ChurchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FamilyCreate"];
+            };
+        };
+        responses: {
+            /** @description The created family */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Family"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getFamily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The family */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Family"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateFamily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The updated family */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Family"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addFamilyMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FamilyMemberCreate"];
+            };
+        };
+        responses: {
+            /** @description The membership */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description That person is already in this family */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    removeFamilyMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                familyId: components["parameters"]["FamilyId"];
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

@@ -121,7 +121,7 @@ export async function attempt(
   client: PoolClient,
   sql: string,
   params: unknown[] = [],
-): Promise<{ ok: boolean; rowCount: number; error?: string }> {
+): Promise<{ ok: boolean; rowCount: number; error?: string; code?: string | undefined }> {
   await client.query('SAVEPOINT attempt');
   try {
     const result = await client.query(sql, params);
@@ -129,7 +129,16 @@ export async function attempt(
     return { ok: true, rowCount: result.rowCount ?? 0 };
   } catch (error) {
     await client.query('ROLLBACK TO SAVEPOINT attempt');
-    return { ok: false, rowCount: 0, error: (error as Error).message };
+    // The SQLSTATE as well as the message: a caller asserting that an insert was refused
+    // for the reason it expected should not have to match on prose Postgres is free to
+    // reword. 23503 is foreign_key_violation, 23514 check_violation, 42501 insufficient
+    // privilege.
+    return {
+      ok: false,
+      rowCount: 0,
+      error: (error as Error).message,
+      code: (error as { code?: string }).code,
+    };
   }
 }
 

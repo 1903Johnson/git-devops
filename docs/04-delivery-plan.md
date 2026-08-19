@@ -38,7 +38,8 @@ Legend: **C** Claude · **X** Codex · ⛓ blocks the other agent · 🔒 securi
 | CORE-014 🔒 | JWT access + rotating refresh tokens, token-family revocation table, "log out all devices" | **C** |
 | CORE-015 🔒 | MFA (TOTP) — enforced for STAFF/PASTOR/ADMIN roles | **C** |
 | CORE-016 | Church & Campus CRUD + onboarding wizard API | **X** |
-| CORE-017 | Person & Family CRUD, membership status history, milestones | **X** |
+| CORE-017a ⛓ 🔒 | People/family contract + migration: OpenAPI shapes, RLS, tenant-carrying foreign keys | **C** |
+| CORE-017 | Person & Family CRUD, membership status history, milestones (against CORE-017a) | **X** |
 | WEB-010 | Admin web shell: routing, auth flow against CORE-013/014, layout, nav-from-API stub | **X** |
 
 Claude is the bottleneck this sprint by design — tenancy and auth must be right before

@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "migrate:test": "tsx src/cli.ts",
     "test:integration": "vitest run test/runner.integration.test.ts",
-    "test:isolation": "vitest run test/isolation.test.ts"
+    "test:isolation": "vitest run test/isolation.test.ts test/people-isolation.test.ts"
   },
   "dependencies": {
     "pg": "catalog:"
