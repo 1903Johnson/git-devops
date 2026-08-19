@@ -6,6 +6,23 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "test:isolation": "vitest run test/isolation",
+    "test:module-lifecycle": "vitest run test/lifecycle"
+  },
+  "dependencies": {
+    "@church/policy": "workspace:*",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@church/migrations": "workspace:*",
+    "@church/tenancy": "workspace:*",
+    "@church/testing": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

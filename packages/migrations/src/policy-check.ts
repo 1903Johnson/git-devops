@@ -23,6 +23,12 @@ export const TENANT_ROOT_TABLES = new Set(['church']);
  */
 export const PLATFORM_TABLES = new Set([
   'schema_migrations', // deployment metadata, not customer data
+  // The catalogue of modules this deployment knows how to run. Identical for every tenant
+  // and seeded from manifests at boot, so it holds no customer data at all — which module
+  // a *particular* church has enabled lives in church_module, and that table is
+  // tenant-scoped and RLS-enforced like any other. Scoping the catalogue would hide every
+  // module from everybody.
+  'module_definition',
 ]);
 
 export interface PolicyGap {

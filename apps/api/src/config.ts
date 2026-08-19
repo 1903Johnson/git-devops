@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import type { KeyRing } from '@church/identity';
 
 /**
@@ -13,6 +14,8 @@ export interface ApiConfig {
   readonly databaseUrl: string;
   readonly appRole: string;
   readonly keys: KeyRing;
+  /** Where optional modules live. Discovered by convention; see docs/02 §1. */
+  readonly modulesDir: string;
 }
 
 export class ConfigError extends Error {
@@ -63,5 +66,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     // superusers at all, so a wrong default here silently disables tenant isolation.
     appRole: env.APP_DB_ROLE ?? 'app_runtime',
     keys: parseKeyRing(required(env, 'JWT_SIGNING_KEYS')),
+    modulesDir: env.MODULES_DIR ?? fileURLToPath(new URL('../../../modules/', import.meta.url)),
   };
 }

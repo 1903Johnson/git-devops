@@ -8,9 +8,11 @@ import { TenantDatabase, currentTenant } from '@church/tenancy';
 import { type AccessTokenClaims, type KeyRing, issueAccessToken } from '@church/identity';
 import { APP_ROLE } from '@church/testing';
 import { AuthGuard } from '../../src/common/auth.guard.js';
+import { ModuleGuard } from '../../src/common/module.guard.js';
 import { ErrorFilter } from '../../src/common/error.filter.js';
 import { PolicyGuard } from '../../src/common/policy.guard.js';
 import { Public } from '../../src/common/public.decorator.js';
+import { RequiresModule } from '../../src/common/requires-module.decorator.js';
 import { RequiresPermission } from '../../src/common/requires-permission.decorator.js';
 import { TenantInterceptor } from '../../src/common/tenant.interceptor.js';
 import { API_CONFIG, PG_POOL } from '../../src/common/tokens.js';
@@ -75,6 +77,17 @@ class ProbeController {
   }
 }
 
+/** A module-scoped controller, to exercise ModuleGuard the way a real module would. */
+@Controller('probe/module')
+@RequiresModule('good_module')
+class ModuleProbeController {
+  @RequiresPermission(CORE_PERMISSIONS.church_read)
+  @Get('thing')
+  thing(): { ok: true } {
+    return { ok: true };
+  }
+}
+
 export interface TestApp {
   app: NestFastifyApplication;
   pool: Pool;
@@ -91,10 +104,11 @@ export async function createTestApp(): Promise<TestApp> {
     databaseUrl: connectionString,
     appRole: APP_ROLE,
     keys: TEST_KEYS,
+    modulesDir: new URL('../../../../packages/module-kit/test/fixtures/', import.meta.url).pathname,
   };
 
   const moduleRef = await Test.createTestingModule({
-    controllers: [ProbeController],
+    controllers: [ProbeController, ModuleProbeController],
     providers: [
       { provide: API_CONFIG, useValue: config },
       { provide: PG_POOL, useValue: pool },
@@ -104,6 +118,7 @@ export async function createTestApp(): Promise<TestApp> {
       },
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: APP_GUARD, useClass: PolicyGuard },
+      { provide: APP_GUARD, useClass: ModuleGuard },
       { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
       { provide: APP_FILTER, useClass: ErrorFilter },
     ],

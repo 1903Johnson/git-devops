@@ -15,3 +15,6 @@ coverage/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Scratch manifests written by the module-kit loader tests.
+packages/module-kit/test/.tmp/

@@ -14,6 +14,14 @@ export interface TenantTableSpec {
    * because only they know the table's required columns.
    */
   insert: (client: PoolClient, churchId: string) => Promise<string>;
+  /**
+   * The column the value from `insert` identifies a row by. Defaults to `id`.
+   *
+   * Junction and state tables often have a composite primary key and no surrogate `id` —
+   * `church_module` is keyed on (church_id, module_key). Those tables need the battery
+   * more than most, not less, so the probes take the column rather than assuming one.
+   */
+  idColumn?: string;
 }
 
 /** Fresh church ids per assertion, so a leak between tests cannot be mistaken for a pass. */
@@ -78,6 +86,7 @@ export async function checkTenantIsolation(
   const fail = (check: string, detail: string) => failures.push({ check, detail });
 
   const { table } = spec;
+  const idColumn = spec.idColumn ?? 'id';
   const churchA = newChurchId();
   const churchB = newChurchId();
 
@@ -99,8 +108,14 @@ export async function checkTenantIsolation(
     if (foreign.length > 0)
       fail('select_scope', `SELECT returned ${foreign.length} row(s) belonging to another church`);
 
-    // 2. Guessing the other tenant's id does not help.
-    const guessed = await client.query(`SELECT id FROM ${table} WHERE id = $1`, [idB]);
+    // 2. Guessing the other tenant's id does not help. Every probe below names Church B's
+    //    id *and* church_id: on a table whose key is only unique within a tenant — a
+    //    composite (church_id, key) — the id alone would match Church A's own row and the
+    //    probe would report a leak that is not there.
+    const guessed = await client.query(
+      `SELECT ${idColumn} FROM ${table} WHERE ${idColumn} = $1 AND church_id = $2`,
+      [idB, churchB],
+    );
     if ((guessed.rowCount ?? 0) > 0)
       fail('select_by_id', `Church B's row was readable by id from Church A's context`);
 
@@ -108,13 +123,17 @@ export async function checkTenantIsolation(
     //    rows rather than erroring — silence here is the bug, so count the rows.
     const updated = await attempt(
       client,
-      `UPDATE ${table} SET church_id = church_id WHERE id = $1`,
-      [idB],
+      `UPDATE ${table} SET church_id = church_id WHERE ${idColumn} = $1 AND church_id = $2`,
+      [idB, churchB],
     );
     if (updated.ok && updated.rowCount > 0)
       fail('update_across_tenant', `UPDATE modified ${updated.rowCount} of Church B's row(s)`);
 
-    const deleted = await attempt(client, `DELETE FROM ${table} WHERE id = $1`, [idB]);
+    const deleted = await attempt(
+      client,
+      `DELETE FROM ${table} WHERE ${idColumn} = $1 AND church_id = $2`,
+      [idB, churchB],
+    );
     if (deleted.ok && deleted.rowCount > 0)
       fail('delete_across_tenant', `DELETE removed ${deleted.rowCount} of Church B's row(s)`);
 
@@ -127,7 +146,9 @@ export async function checkTenantIsolation(
   });
 
   // Count Church B's rows as admin: exactly the one seeded above, or Church A planted one.
-  const plantedRows = await client.query(`SELECT id FROM ${table} WHERE church_id = $1`, [churchB]);
+  const plantedRows = await client.query(`SELECT ${idColumn} FROM ${table} WHERE church_id = $1`, [
+    churchB,
+  ]);
   if ((plantedRows.rowCount ?? 0) > 1)
     fail(
       'insert_across_tenant',
@@ -137,10 +158,10 @@ export async function checkTenantIsolation(
   // 5. With no tenant context at all, the table must be empty rather than wide open —
   //    this catches a policy whose USING clause silently evaluates to true on NULL.
   await asTenant(client, '00000000-0000-0000-0000-000000000000', async () => {
-    const { rowCount } = await client.query(`SELECT id FROM ${table} WHERE id IN ($1, $2)`, [
-      idA,
-      idB,
-    ]);
+    const { rowCount } = await client.query(
+      `SELECT ${idColumn} FROM ${table} WHERE ${idColumn} IN ($1, $2)`,
+      [idA, idB],
+    );
     if ((rowCount ?? 0) > 0)
       fail('unknown_tenant', `${rowCount} row(s) visible to a church id that owns nothing`);
   });

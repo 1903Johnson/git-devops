@@ -13,6 +13,7 @@ import {
   RlsExemptConnectionError,
 } from '@church/tenancy';
 import { InvalidAccessTokenError } from '@church/identity';
+import { ModuleNotEnabledException } from './module.guard.js';
 import { contextOf } from './request-context.js';
 import { UndeclaredRouteError } from './policy.guard.js';
 
@@ -92,6 +93,18 @@ export function classify(exception: unknown): Classified {
       code: 'INTERNAL',
       message: 'Something went wrong',
       internal: `${exception.name}: ${exception.message}`,
+    };
+  }
+
+  if (exception instanceof ModuleNotEnabledException) {
+    // 404 like any other, but with the code the SDK turns into "this feature isn't enabled
+    // for your church". Same status line as a route that does not exist, so nothing about
+    // the deployment's module set leaks.
+    return {
+      status: 404,
+      code: 'MODULE_NOT_ENABLED',
+      message: 'Not found',
+      internal: `module ${exception.moduleKey} is not enabled for this tenant`,
     };
   }
 
