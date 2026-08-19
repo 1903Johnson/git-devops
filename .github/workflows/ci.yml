@@ -122,19 +122,24 @@ jobs:
       - run: pnpm -r --if-present run test:integration
 
       # --if-present lets the pipeline activate incrementally, which also means a deleted
-      # script would silently pass. Once the API app exists these suites are mandatory,
-      # so assert they are defined before trusting a green result.
-      - name: Mandatory suites must be defined once apps/api exists
+      # script would silently pass. Each mandatory suite is asserted from the point its
+      # subject exists — keyed on that subject, not on a single milestone, because a suite
+      # demanded before there is anything to test can only be satisfied by a vacuous one,
+      # and a vacuous suite is worse than a missing one: it reports green.
+      - name: Mandatory suites must be defined once their subject exists
         run: |
           set -euo pipefail
-          if [ -d apps/api ]; then
-            for script in test:isolation test:module-lifecycle; do
-              if ! grep -rql "\"$script\"" --include=package.json apps modules packages; then
-                echo "::error::$script is not defined in any workspace package — see docs/03 §6"
-                exit 1
-              fi
-            done
-          fi
+          require() {
+            if ! grep -rql "\"$1\"" --include=package.json apps modules packages; then
+              echo "::error::$1 is not defined in any workspace package — see docs/03 §6"
+              exit 1
+            fi
+          }
+          # An HTTP surface means tenant isolation must be proved at the boundary, not only
+          # inside the packages.
+          if [ -d apps/api ]; then require test:isolation; fi
+          # Enable / disable / purge only means something once a module exists to run it on.
+          if compgen -G "modules/*/package.json" > /dev/null; then require test:module-lifecycle; fi
           echo "mandatory suite check: ok"
 
       # Separate steps rather than folded into the integration run so a failure names the

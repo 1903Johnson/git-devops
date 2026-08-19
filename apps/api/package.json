@@ -1,0 +1,38 @@
+{
+  "name": "@church/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --import @swc-node/register/esm-register --watch src/main.ts",
+    "start": "node --import @swc-node/register/esm-register src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "test:isolation": "vitest run test/isolation"
+  },
+  "dependencies": {
+    "@church/contracts": "workspace:*",
+    "@church/identity": "workspace:*",
+    "@church/policy": "workspace:*",
+    "@church/tenancy": "workspace:*",
+    "@nestjs/common": "catalog:",
+    "@nestjs/core": "catalog:",
+    "@nestjs/platform-fastify": "catalog:",
+    "pg": "catalog:",
+    "reflect-metadata": "catalog:",
+    "rxjs": "catalog:"
+  },
+  "devDependencies": {
+    "@church/migrations": "workspace:*",
+    "@church/testing": "workspace:*",
+    "@nestjs/testing": "catalog:",
+    "@swc-node/register": "catalog:",
+    "@swc/core": "catalog:",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "typescript": "catalog:",
+    "unplugin-swc": "catalog:",
+    "vitest": "catalog:"
+  }
+}
