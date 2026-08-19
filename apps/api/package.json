@@ -14,6 +14,7 @@
   "dependencies": {
     "@church/contracts": "workspace:*",
     "@church/identity": "workspace:*",
+    "@church/module-kit": "workspace:*",
     "@church/policy": "workspace:*",
     "@church/tenancy": "workspace:*",
     "@nestjs/common": "catalog:",

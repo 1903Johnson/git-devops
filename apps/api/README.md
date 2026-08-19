@@ -14,6 +14,7 @@ Assembled in `src/app.module.ts`, matching `docs/01` §3:
 |---|---|---|
 | `AuthGuard` | Verifies the bearer token, builds the `Subject` | 401 `UNAUTHENTICATED` |
 | `PolicyGuard` | `assertCan` for the route's `@RequiresPermission()` | 403 `FORBIDDEN` |
+| `ModuleGuard` | Withholds routes of a module the tenant has not enabled | 404 `MODULE_NOT_ENABLED` |
 | `TenantInterceptor` | Runs the handler inside `runWithTenant`, so RLS applies | — |
 | handler | | |
 | `ErrorFilter` | Maps anything thrown to the contract's error envelope | — |
@@ -22,11 +23,13 @@ Order is load-bearing. Guards run before interceptors, so tenancy is established
 authentication: the church id comes from the verified token, and there is nothing
 trustworthy to scope to until the JWT has been checked.
 
-**Two stages are absent and neither is stubbed.** A `ModuleGuard` (CORE-022) returning 404
-`MODULE_NOT_ENABLED` belongs between `PolicyGuard` and the handler; audit (CORE-021)
-belongs inside `TenantInterceptor`, so entries are written in the same tenant context as
-the work they describe. A placeholder for either would be worse than its absence, because
-it would look enforced.
+`ModuleGuard` runs after `PolicyGuard` so permission is checked before existence is
+revealed — a caller without the permission learns nothing about whether the module is on.
+
+**One stage is still absent and it is not stubbed.** Audit (CORE-021) belongs inside
+`TenantInterceptor`, so entries are written in the same tenant context as the work they
+describe. A placeholder that logged nothing would be worse than its absence, because it
+would look enforced.
 
 ## Writing a controller
 
@@ -51,6 +54,9 @@ Three rules:
 - **Inject `TenantDatabase`, never `Pool`.** Going around `TenantDatabase` means going
   around `SET LOCAL app.current_church_id`, and RLS stops applying. The pool is provided
   for migrations and health checks only.
+- **A module's controller carries `@RequiresModule('<key>')`.** Put it on the controller so
+  it covers every route in it. A module route without one is reachable by every tenant,
+  enabled or not.
 - **Never read the church id from the request.** It comes from the token. A path parameter
   naming a church is for routing and validation, never for scoping — there is a test
   asserting a query string cannot override it.
