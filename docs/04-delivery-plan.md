@@ -59,7 +59,7 @@ shell and people/church CRUD in parallel.
 | CORE-021a 🔒 | Audit failed logins — needs `@church/identity` to attribute a known-user failure to its church | **C** |
 | CORE-022 ⛓ | **Module registry**: manifest loader, `module_definition` / `church_module`, `ModuleGuard`, 404 `MODULE_NOT_ENABLED` | **C** |
 | CORE-023 | Module enable/disable API + entitlement check against plan | **C** |
-| CORE-024 | Module purge job + scheduler + purge audit records | **C** |
+| CORE-024 | Module purge job (`apps/worker`) + purge audit records; scheduling is deployment config (INF-005) | **C** |
 | CORE-025 | `GET /me/modules` — enabled modules, nav, settings payload | **C** |
 | CORE-026 | Groups & Ministries module (core) | **X** |
 | CORE-027 | Events (free events, occurrences, RSVP) | **X** |

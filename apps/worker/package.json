@@ -1,0 +1,27 @@
+{
+  "name": "@church/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "purge:run": "tsx src/main.ts purge",
+    "purge:plan": "tsx src/main.ts purge --dry-run",
+    "typecheck": "tsc --noEmit",
+    "test:integration": "vitest run test/integration"
+  },
+  "dependencies": {
+    "@church/audit": "workspace:*",
+    "@church/module-kit": "workspace:*",
+    "@church/tenancy": "workspace:*",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@church/migrations": "workspace:*",
+    "@church/testing": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
