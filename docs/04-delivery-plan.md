@@ -234,6 +234,28 @@ Rules that make it work rather than theatre:
 - **Fixes land as `REV-nnn` tickets** referencing the report, so the history shows what was
   found, when, and what it cost.
 
+### Findings so far
+
+Pass 1 reviewed `549567c` and returned three findings, all confirmed on inspection.
+
+| ID | From | Severity | What | Status |
+|---|---|---|---|---|
+| REV-001 | SEC-002 | high | Refresh rotation consumed a token without a guard, so two concurrent presentations both succeeded and theft detection never fired | **fixed** |
+| REV-002 | SEC-001 | high | Campus scoping is applied on single-record reads and writes only; collection, create and campus-management paths pass no resource, so a CAMPUS_ADMIN is not confined | open |
+| REV-003 | SEC-003 | medium | TOTP counter is read outside the write transaction and advanced unconditionally, so one code can complete two concurrent logins | open |
+
+Two things that pass is worth remembering for:
+
+- **Its reproductions were not executed** — the reviewing sandbox could not run the suites,
+  so all three findings came from reading. They were right anyway, but an unexecuted
+  reproduction is a hypothesis, and REV-001 is why that distinction matters: the obvious
+  way to write its regression test passes against the defect, because two racing requests
+  serialise on their own most of the time. The failing test had to force the interleaving.
+- **The "sound" list needs the same scepticism as the findings.** The purge path was
+  cleared partly because `WHERE church_id = $1` is present — which is the right conclusion
+  from the wrong evidence, since that clause was absent while twelve tests passed, and only
+  an owner-connection test caught it.
+
 ## Milestones
 
 | Milestone | Ends | Ships |

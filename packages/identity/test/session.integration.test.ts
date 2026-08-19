@@ -3,7 +3,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { APP_ROLE, ensureAppRole } from '@church/testing';
 import { CORE_MIGRATIONS_DIR, applyMigrations, collectMigrations } from '@church/migrations';
-import { IdentityService, SessionService, verifyAccessToken, type KeyRing } from '../src/index.js';
+import {
+  IdentityService,
+  SessionService,
+  verifyAccessToken,
+  type KeyRing,
+  type RefreshOutcome,
+} from '../src/index.js';
 
 let pool: Pool;
 let sessions: SessionService;
@@ -56,6 +62,28 @@ beforeEach(async () => {
     client.release();
   }
 });
+
+/**
+ * Waits until `n` backends are stalled waiting on a lock.
+ *
+ * Racing two requests and hoping they overlap produces a test that passes against the
+ * defect it exists to catch. Waiting for the contention to be observable in
+ * pg_stat_activity makes the overlap a fact rather than a hope.
+ */
+async function waitForBlockedBackends(n: number, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*) AS n FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND state = 'active' AND pid <> pg_backend_pid()`,
+    );
+    if (Number(rows[0]?.n ?? 0) >= n) return;
+    if (Date.now() > deadline) {
+      throw new Error(`only ${rows[0]?.n ?? 0} of ${n} backends blocked before timeout`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 async function newUser() {
   const address = email();
@@ -155,6 +183,71 @@ describe('theft detection', () => {
       [userId],
     );
     expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it('treats a concurrent second presentation as reuse, not a second session', async () => {
+    // Rotation is a theft control only if a token is spendable exactly once. Sequentially
+    // it is — the test above proves that. This asks whether the property survives two
+    // holders presenting the same token at the same instant, which is the shape of a
+    // stolen token racing its legitimate owner: the case the sequential test cannot see,
+    // and the one an attacker gets to choose.
+    //
+    // The interleaving is forced rather than hoped for. Two bare Promise.all refreshes
+    // pass against the broken code most of the time, because they happen to serialise —
+    // which would make this a test that reports green on a live defect. So a third
+    // connection takes a row lock on the token first: both refreshes then read it as
+    // unused, and both stall at their UPDATE until the lock is released. That is the
+    // window an attacker has, held open on purpose.
+    const { address, userId } = await newUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'success') throw new Error('login failed');
+
+    const tokenId = (
+      await pool.query<{ id: string }>(
+        'SELECT id FROM refresh_token WHERE user_id = $1 AND revoked_at IS NULL',
+        [userId],
+      )
+    ).rows[0]!.id;
+
+    const blocker = await pool.connect();
+    let racing: Promise<[RefreshOutcome, RefreshOutcome]>;
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT id FROM refresh_token WHERE id = $1 FOR UPDATE', [tokenId]);
+
+      racing = Promise.all([
+        sessions.refresh(login.tokens.refreshToken),
+        sessions.refresh(login.tokens.refreshToken),
+      ]);
+
+      // Both have read the token and are queued behind the lock. Waiting on the observed
+      // lock waits rather than a sleep is what makes this deterministic instead of merely
+      // likely.
+      await waitForBlockedBackends(2);
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined);
+      blocker.release();
+    }
+
+    const [first, second] = await racing;
+
+    // Exactly one winner. Two successes means the thief and the owner both hold a live
+    // session and nothing was detected.
+    expect([first.status, second.status].sort()).toEqual(['reuse_detected', 'success']);
+
+    // And the detection has to bite: the winner's successor dies with the family. The
+    // loser blocks on the winner's row lock until it commits, so that successor is
+    // already visible when the family is revoked — the lock is what makes the ordering
+    // hold rather than luck.
+    const winner = [first, second].find((r) => r.status === 'success');
+    if (winner?.status !== 'success') throw new Error('expected exactly one success');
+    expect((await sessions.refresh(winner.tokens.refreshToken)).status).toBe('invalid');
+
+    const live = await pool.query<{ n: string }>(
+      'SELECT count(*) AS n FROM refresh_token WHERE user_id = $1 AND revoked_at IS NULL',
+      [userId],
+    );
+    expect(live.rows[0]?.n).toBe('0');
   });
 
   it('leaves other devices alone when one family is compromised', async () => {
