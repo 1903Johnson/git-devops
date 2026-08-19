@@ -10,6 +10,7 @@ import {
   APP_ROLE,
   asTenant,
   assertTenantIsolation,
+  attempt,
   ensureAppRole,
   withRollback,
 } from '@church/testing';
@@ -204,5 +205,106 @@ describe('authentication crosses tenants by design', () => {
       }),
     );
     expect(found).toBe(0);
+  });
+});
+
+describe('user_role isolation', () => {
+  // Roles decide what a token may do. A leak here is not a data leak, it is a privilege
+  // leak: another church's CHURCH_ADMIN row landing in this church's token.
+  it('passes the standard tenant-isolation battery', async () => {
+    await withRollback(async (client: PoolClient) => {
+      await assertTenantIsolation(client, {
+        table: 'user_role',
+        insert: async (c, churchId) => {
+          await c.query(`INSERT INTO church (id, name, country) VALUES ($1, 'iso-role', 'US')`, [
+            churchId,
+          ]);
+          const user = await c.query<{ id: string }>(
+            `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+            [churchId, `role-${Math.random().toString(36).slice(2)}@example.org`],
+          );
+          const { rows } = await c.query<{ id: string }>(
+            `INSERT INTO user_role (church_id, user_id, role) VALUES ($1, $2, 'STAFF') RETURNING id`,
+            [churchId, user.rows[0]!.id],
+          );
+          if (!rows[0]) throw new Error('insert returned no row');
+          return rows[0].id;
+        },
+      });
+    });
+  });
+
+  it("refuses to grant a role to another church's user", async () => {
+    // The composite foreign key, not RLS, is what stops this: FK checks run as the table
+    // owner and ignore the tenant policy entirely.
+    await withRollback(async (client: PoolClient) => {
+      const churches = await client.query<{ id: string }>(
+        `INSERT INTO church (name, country) VALUES ('role-a', 'US'), ('role-b', 'US') RETURNING id`,
+      );
+      const [attacker, victim] = [churches.rows[0]!.id, churches.rows[1]!.id];
+      const theirUser = await client.query<{ id: string }>(
+        `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+        [victim, `victim-${Math.random().toString(36).slice(2)}@example.org`],
+      );
+
+      const { code } = await attempt(
+        client,
+        `INSERT INTO user_role (church_id, user_id, role) VALUES ($1, $2, 'CHURCH_ADMIN')`,
+        [attacker, theirUser.rows[0]!.id],
+      );
+      expect(code).toBe('23503');
+    });
+  });
+
+  it('requires a campus-scoped role to name its campus', async () => {
+    // Without one the policy engine skips its narrowing check and the role reaches the
+    // whole church — the unsafe direction, so the state is made unreachable.
+    await withRollback(async (client: PoolClient) => {
+      const church = await client.query<{ id: string }>(
+        `INSERT INTO church (name, country) VALUES ('role-campus', 'US') RETURNING id`,
+      );
+      const churchId = church.rows[0]!.id;
+      const user = await client.query<{ id: string }>(
+        `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+        [churchId, `campus-${Math.random().toString(36).slice(2)}@example.org`],
+      );
+      const { code } = await attempt(
+        client,
+        `INSERT INTO user_role (church_id, user_id, role) VALUES ($1, $2, 'CAMPUS_ADMIN')`,
+        [churchId, user.rows[0]!.id],
+      );
+      expect(code).toBe('23514');
+    });
+  });
+
+  it('allows only one campus-scoped role per user', async () => {
+    // The token and the policy Subject each carry a single campus, so two campuses cannot
+    // be represented — and the way that fails today is the campus being omitted, which
+    // widens the user's reach instead of narrowing it.
+    await withRollback(async (client: PoolClient) => {
+      const church = await client.query<{ id: string }>(
+        `INSERT INTO church (name, country) VALUES ('role-two-campus', 'US') RETURNING id`,
+      );
+      const churchId = church.rows[0]!.id;
+      const user = await client.query<{ id: string }>(
+        `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+        [churchId, `two-${Math.random().toString(36).slice(2)}@example.org`],
+      );
+      const campuses = await client.query<{ id: string }>(
+        `INSERT INTO campus (church_id, name) VALUES ($1, 'North'), ($1, 'South') RETURNING id`,
+        [churchId],
+      );
+      const userId = user.rows[0]!.id;
+      await client.query(
+        `INSERT INTO user_role (church_id, user_id, role, campus_id) VALUES ($1, $2, 'CAMPUS_ADMIN', $3)`,
+        [churchId, userId, campuses.rows[0]!.id],
+      );
+      const { code } = await attempt(
+        client,
+        `INSERT INTO user_role (church_id, user_id, role, campus_id) VALUES ($1, $2, 'CAMPUS_ADMIN', $3)`,
+        [churchId, userId, campuses.rows[1]!.id],
+      );
+      expect(code).toBe('23505');
+    });
   });
 });

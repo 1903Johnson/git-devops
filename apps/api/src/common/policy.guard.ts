@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { type Permission, assertCan } from '@church/policy';
+import { AUTHENTICATED_ONLY } from './authenticated.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { REQUIRED_PERMISSION } from './requires-permission.decorator.js';
 import { contextOf } from './request-context.js';
@@ -32,6 +33,14 @@ export class PolicyGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<object>();
     const { subject } = contextOf(request);
     if (!subject) throw new UnauthorizedException('no authenticated subject');
+
+    // Authenticated with nothing further to check — reading your own profile, ending your
+    // own session. The subject test above has already run, so this is not a bypass.
+    const anyUser = this.reflector.getAllAndOverride<boolean>(AUTHENTICATED_ONLY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (anyUser) return true;
 
     const permission = this.reflector.getAllAndOverride<Permission>(REQUIRED_PERMISSION, [
       context.getHandler(),

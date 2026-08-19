@@ -14,6 +14,15 @@ export interface ApiConfig {
   readonly databaseUrl: string;
   readonly appRole: string;
   readonly keys: KeyRing;
+  /**
+   * 32 bytes, for the AES-GCM envelope around stored TOTP secrets.
+   *
+   * Separate from the JWT signing keys on purpose: signing keys rotate freely, but rotating
+   * this one requires re-encrypting every enrolled credential, so conflating them would
+   * make routine key rotation a migration. In production it comes from KMS or a secrets
+   * manager, never from an environment variable in a shell history.
+   */
+  readonly mfaEncryptionKey: Uint8Array;
   /** Where optional modules live. Discovered by convention; see docs/02 §1. */
   readonly modulesDir: string;
 }
@@ -57,6 +66,15 @@ export function parseKeyRing(raw: string): KeyRing {
   return { active, accepted };
 }
 
+/** Base64, exactly 32 bytes. AES-256-GCM takes nothing else, and a short key fails late. */
+export function parseEncryptionKey(raw: string): Uint8Array {
+  const key = Buffer.from(raw, 'base64');
+  if (key.byteLength !== 32) {
+    throw new ConfigError(`MFA_ENCRYPTION_KEY must be 32 bytes base64, got ${key.byteLength}`);
+  }
+  return new Uint8Array(key);
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   return {
     port: Number(env.PORT ?? 3000),
@@ -66,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     // superusers at all, so a wrong default here silently disables tenant isolation.
     appRole: env.APP_DB_ROLE ?? 'app_runtime',
     keys: parseKeyRing(required(env, 'JWT_SIGNING_KEYS')),
+    mfaEncryptionKey: parseEncryptionKey(required(env, 'MFA_ENCRYPTION_KEY')),
     modulesDir: env.MODULES_DIR ?? fileURLToPath(new URL('../../../modules/', import.meta.url)),
   };
 }
