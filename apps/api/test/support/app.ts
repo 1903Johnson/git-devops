@@ -17,6 +17,8 @@ import { RequiresModule } from '../../src/common/requires-module.decorator.js';
 import { RequiresPermission } from '../../src/common/requires-permission.decorator.js';
 import { TenantInterceptor } from '../../src/common/tenant.interceptor.js';
 import { API_CONFIG, LOADED_MODULES, PG_POOL } from '../../src/common/tokens.js';
+import { AuthController } from '../../src/auth/auth.controller.js';
+import { AuthService } from '../../src/auth/auth.service.js';
 import { ModulesController } from '../../src/module-admin/modules.controller.js';
 import { ModulesService } from '../../src/module-admin/modules.service.js';
 import type { ApiConfig } from '../../src/config.js';
@@ -107,15 +109,17 @@ export async function createTestApp(): Promise<TestApp> {
     databaseUrl: connectionString,
     appRole: APP_ROLE,
     keys: TEST_KEYS,
+    mfaEncryptionKey: new Uint8Array(32).fill(11),
     modulesDir: new URL('../../../../packages/module-kit/test/fixtures/', import.meta.url).pathname,
   };
 
   const moduleRef = await Test.createTestingModule({
-    controllers: [ProbeController, ModuleProbeController, ModulesController],
+    controllers: [ProbeController, ModuleProbeController, ModulesController, AuthController],
     providers: [
       { provide: API_CONFIG, useValue: config },
       { provide: LOADED_MODULES, useFactory: () => loadModules(config.modulesDir) },
       ModulesService,
+      AuthService,
       { provide: PG_POOL, useValue: pool },
       {
         provide: TenantDatabase,

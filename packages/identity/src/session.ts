@@ -21,6 +21,14 @@ import {
   type StoredRefreshToken,
 } from './refresh.js';
 
+/** The slice of a client this file needs to read roles, so a tx or a client both fit. */
+interface RoleQuery {
+  query<T extends Record<string, unknown>>(
+    text: string,
+    values?: readonly unknown[],
+  ): Promise<{ rows: T[] }>;
+}
+
 export interface TokenPair {
   readonly accessToken: string;
   readonly refreshToken: string;
@@ -245,8 +253,24 @@ export class SessionService {
     );
   }
 
+  /**
+   * The roles this user holds, read inside the caller's transaction so RLS scopes them.
+   *
+   * Loaded at every issue and every refresh rather than cached in the refresh token, so a
+   * revoked role stops working within one access-token lifetime (15 minutes) instead of
+   * lasting as long as the session. Granting a role is equally prompt.
+   */
+  async #loadRoles(tx: RoleQuery, userId: string): Promise<{ roles: string[]; campusId?: string }> {
+    const { rows } = await tx.query<{ role: string; campus_id: string | null }>(
+      'SELECT role, campus_id FROM user_role WHERE user_id = $1 ORDER BY role',
+      [userId],
+    );
+    const campusId = rows.find((row) => row.campus_id !== null)?.campus_id ?? undefined;
+    return { roles: rows.map((row) => row.role), ...(campusId ? { campusId } : {}) };
+  }
+
   async #issuePairIn(
-    tx: { query: (sql: string, params?: readonly unknown[]) => Promise<unknown> },
+    tx: RoleQuery,
     userId: string,
     churchId: string,
     familyId: string,
@@ -259,10 +283,12 @@ export class SessionService {
       [churchId, userId, familyId, hashRefreshSecret(secret), deviceLabel ?? null, refreshExpiry()],
     );
 
+    const { roles, campusId } = await this.#loadRoles(tx, userId);
     const claims: AccessTokenClaims = {
       sub: userId,
       church_id: churchId,
-      roles: [],
+      roles,
+      ...(campusId ? { campus_id: campusId } : {}),
       sid: familyId,
     };
 

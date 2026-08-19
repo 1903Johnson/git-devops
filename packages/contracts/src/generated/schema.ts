@@ -308,6 +308,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange credentials for tokens
+         * @description Answers one of two shapes on success: tokens, or an MFA challenge that must be
+         *     completed before any token is issued. Both are 200 — an unfinished login is not an
+         *     error, and modelling the challenge as a 4xx would push clients into treating a
+         *     normal step as a failure.
+         */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a login with a second factor
+         * @description Accepts the challenge from `login` plus a TOTP code or a recovery code. The
+         *     challenge is a short-lived token with its own audience, so it cannot be presented
+         *     anywhere an access token is expected.
+         */
+        post: operations["completeMfa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a refresh token for a new pair
+         * @description Rotating: the presented token is consumed and a new one returned. Presenting a
+         *     token that was already rotated revokes the whole family — that is theft detection,
+         *     and the response is an ordinary 401 so a thief learns nothing from it.
+         *
+         *     Roles are re-read here, so granting or revoking a role reaches an active session
+         *     within one access-token lifetime.
+         */
+        post: operations["refreshSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End this session
+         * @description Revokes the presented refresh token's family — this device, not the others.
+         *     Deliberately answers 204 whether or not the token was valid: a caller trying to log
+         *     out should never be told their token was already dead, and probing here should
+         *     reveal nothing.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End every session for the current user
+         * @description The lost-phone case. Revokes every refresh token this user holds, on every device.
+         *     Access tokens already issued stay valid until they expire — at most 15 minutes — so
+         *     this is a bound, not an instant cutoff.
+         */
+        post: operations["logoutAllDevices"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The authenticated user
+         * @description What a client shell needs before it can render anything: who is signed in, which
+         *     church, and what they may do. Requires authentication but no permission — a user
+         *     can always read their own identity.
+         */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -695,6 +832,98 @@ export interface components {
             settings?: {
                 [key: string]: unknown;
             };
+        };
+        LoginRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+            /**
+             * @description Shown in the user's session list so "log out that one" is a meaningful choice.
+             *     Client-supplied and therefore never trusted for anything but display.
+             */
+            deviceLabel?: string;
+        };
+        MfaRequest: {
+            /** @description The challenge token returned by `login`. */
+            challenge: string;
+            /** @description A six-digit TOTP code, or a recovery code. */
+            code: string;
+        };
+        RefreshRequest: {
+            refreshToken: string;
+        };
+        TokenPair: {
+            /**
+             * @description Bearer token for the API. Short-lived by design — revoking a role or a session
+             *     takes effect when this expires, so its lifetime is the worst-case delay.
+             */
+            accessToken: string;
+            /**
+             * @description Single-use. Exchanging it returns a new one; presenting a spent one revokes the
+             *     whole family.
+             *
+             *     Carried in the body rather than an httpOnly cookie so that web, mobile and
+             *     kiosk clients all use one flow. Cookies would be marginally safer against XSS
+             *     on web alone, at the cost of CSRF handling and a second code path for the two
+             *     native clients.
+             */
+            refreshToken: string;
+            /** @description Lifetime of the access token, not the refresh token. */
+            expiresInSeconds: number;
+        };
+        LoginResult: components["schemas"]["LoginSuccess"] | components["schemas"]["MfaChallenge"];
+        LoginSuccess: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "success";
+            tokens: components["schemas"]["TokenPair"];
+        };
+        /**
+         * @description Credentials were right and a second factor is still owed. No token is issued yet —
+         *     the challenge is not a credential for anything but `/auth/mfa`.
+         */
+        MfaChallenge: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "mfa_required";
+            challenge: string;
+            expiresInSeconds: number;
+        };
+        CurrentUser: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            churchId: string;
+            /** Format: email */
+            email: string;
+            /**
+             * Format: uuid
+             * @description Set for a campus-scoped role; the campus their reach stops at.
+             */
+            campusId?: string | null;
+            roles: string[];
+            /**
+             * @description Expanded from the roles, so a client can hide what a user cannot do. A
+             *     convenience for rendering and never an authorization decision — the server
+             *     checks every request regardless, and a client that trusted this list would be
+             *     one tampered response away from showing someone else's data.
+             */
+            permissions: string[];
+            /**
+             * Format: uuid
+             * @description The person record this account represents, when one exists.
+             */
+            personId?: string | null;
+            mfaEnrolled: boolean;
+            /**
+             * @description Whether this user's roles oblige them to enrol. True and `mfaEnrolled` false
+             *     means the client should route them into enrolment.
+             */
+            mfaRequired: boolean;
         };
     };
     responses: {
@@ -1500,6 +1729,186 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Tokens, or a challenge owed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /**
+             * @description Wrong credentials — or a disabled account, deliberately reported the same way.
+             *     Distinguishing them turns this endpoint into an account-existence oracle, and
+             *     the difference is recorded in the log where it belongs.
+             */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description Too many failed attempts; the account is locked for a while. `Retry-After`
+             *     carries the wait in seconds. The lock expires rather than persisting, so a
+             *     guessing attempt cannot be used to keep a real person out indefinitely.
+             */
+            429: {
+                headers: {
+                    /** @description Seconds until another attempt is accepted. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeMfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaRequest"];
+            };
+        };
+        responses: {
+            /** @description Tokens */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The code was wrong, already used, or the challenge has expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    refreshSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description A new token pair */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Session ended */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    logoutAllDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many sessions were ended */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sessionsEnded: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

@@ -41,7 +41,8 @@ Legend: **C** Claude · **X** Codex · ⛓ blocks the other agent · 🔒 securi
 | CORE-017a ⛓ 🔒 | People/family contract + migration: OpenAPI shapes, RLS, tenant-carrying foreign keys | **C** |
 | CORE-017 | Person & Family services, membership status history, milestones (against CORE-017a) | **X** |
 | CORE-018 ⛓ 🔒 | `apps/api` scaffold: NestJS + Fastify, auth → policy → tenant → error-envelope lifecycle | **C** |
-| WEB-010 | Admin web shell: routing, auth flow against CORE-013/014, layout, nav-from-API stub | **X** |
+| CORE-019 ⛓ 🔒 | Auth API + role assignment: `user_role`, roles into the token, `/auth/*`, `/me` | **C** |
+| WEB-010 | Admin web shell: routing, auth flow against CORE-019, layout, nav-from-API stub (needs DEP-002) | **X** |
 
 Claude is the bottleneck this sprint by design — tenancy and auth must be right before
 anything sits on top. Codex works against contracts merged on day 1–2 and builds the web

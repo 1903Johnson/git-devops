@@ -31,6 +31,46 @@ revealed — a caller without the permission learns nothing about whether the mo
 describe. A placeholder that logged nothing would be worse than its absence, because it
 would look enforced.
 
+## Signing in
+
+| Route | Purpose |
+|---|---|
+| `POST /auth/login` | Credentials → tokens, or an MFA challenge |
+| `POST /auth/mfa` | Challenge + code → tokens |
+| `POST /auth/refresh` | Rotate a refresh token; roles are re-read here |
+| `POST /auth/logout` | End this device's session |
+| `POST /auth/logout-all` | End every session for this user |
+| `GET /me` | Who is signed in, and what they may do |
+
+The controller does no security reasoning of its own — password verification, lockout,
+rotation, theft detection and TOTP all live in `@church/identity`. What it does own is what
+the endpoints decline to say:
+
+- **A disabled account answers exactly like a wrong password.** Distinguishing them turns
+  login into an account-existence oracle. The difference is in the log.
+- **A replayed refresh token answers like a junk one.** Presenting a spent token revokes
+  the whole family; telling the thief it was noticed only tells them to move faster, and
+  the real user's devices are already logged out.
+- **Logout always answers 204.** A caller logging out should never learn their token was
+  already dead.
+- **Lockout is 429 with `Retry-After`**, not 401 — it is rate limiting, and every HTTP
+  client already knows what to do with that.
+
+Refresh tokens travel in the request body rather than an httpOnly cookie, so web, mobile
+and kiosk share one flow. Cookies would be marginally safer against XSS on web alone, at
+the cost of CSRF handling and a second code path for the two native clients.
+
+## Roles
+
+An access token carries the roles from `user_role`, read at issue **and at every refresh**.
+A granted or revoked role therefore reaches an active session within one access-token
+lifetime — 15 minutes — instead of lasting as long as the session.
+
+A campus-scoped role must name its campus, enforced by a CHECK constraint, and a user may
+hold at most one. Both exist because the policy engine narrows a `CAMPUS_ADMIN` to their
+campus *only when the subject has one*: with no campus it skips the check and the role
+reaches the whole church. Making the ambiguous state unreachable is safer than handling it.
+
 ## Writing a controller
 
 ```ts
@@ -48,9 +88,11 @@ export class ChurchController {
 
 Three rules:
 
-- **Every route declares `@RequiresPermission()` or `@Public()`.** One that declares
-  neither is refused at request time, not allowed. The usual way an authorization system
-  fails is not a wrong rule; it is a route nobody put a rule on.
+- **Every route declares `@RequiresPermission()`, `@Public()`, or `@Authenticated()`.** One
+  that declares none is refused at request time, not allowed. The usual way an
+  authorization system fails is not a wrong rule; it is a route nobody put a rule on.
+  `@Authenticated()` is the narrow case of a route needing a signed-in user and nothing
+  more — reading your own profile, ending your own session.
 - **Inject `TenantDatabase`, never `Pool`.** Going around `TenantDatabase` means going
   around `SET LOCAL app.current_church_id`, and RLS stops applying. The pool is provided
   for migrations and health checks only.
@@ -76,9 +118,14 @@ rest of the repo is unchanged.
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/church_dev \
 JWT_SIGNING_KEYS="k1:$(head -c 32 /dev/urandom | base64 -w0)" \
+MFA_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64 -w0)" \
 APP_DB_ROLE=app_runtime \
 pnpm --filter @church/api run dev
 ```
+
+`MFA_ENCRYPTION_KEY` is separate from the signing keys on purpose: signing keys rotate
+freely, but rotating this one means re-encrypting every enrolled TOTP secret, so conflating
+them would turn routine key rotation into a migration.
 
 `GET /health` is liveness; `GET /health/ready` checks the database. Load balancers need the
 difference — a process that is alive but cannot reach Postgres should leave rotation, not

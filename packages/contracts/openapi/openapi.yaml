@@ -560,6 +560,164 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Exchange credentials for tokens
+      security: []
+      description: |
+        Answers one of two shapes on success: tokens, or an MFA challenge that must be
+        completed before any token is issued. Both are 200 — an unfinished login is not an
+        error, and modelling the challenge as a 4xx would push clients into treating a
+        normal step as a failure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Tokens, or a challenge owed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            Wrong credentials — or a disabled account, deliberately reported the same way.
+            Distinguishing them turns this endpoint into an account-existence oracle, and
+            the difference is recorded in the log where it belongs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: |
+            Too many failed attempts; the account is locked for a while. `Retry-After`
+            carries the wait in seconds. The lock expires rather than persisting, so a
+            guessing attempt cannot be used to keep a real person out indefinitely.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+              description: Seconds until another attempt is accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/mfa:
+    post:
+      operationId: completeMfa
+      tags: [Auth]
+      summary: Complete a login with a second factor
+      security: []
+      description: |
+        Accepts the challenge from `login` plus a TOTP code or a recovery code. The
+        challenge is a short-lived token with its own audience, so it cannot be presented
+        anywhere an access token is expected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MfaRequest' }
+      responses:
+        '200':
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: The code was wrong, already used, or the challenge has expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/refresh:
+    post:
+      operationId: refreshSession
+      tags: [Auth]
+      summary: Exchange a refresh token for a new pair
+      security: []
+      description: |
+        Rotating: the presented token is consumed and a new one returned. Presenting a
+        token that was already rotated revokes the whole family — that is theft detection,
+        and the response is an ordinary 401 so a thief learns nothing from it.
+
+        Roles are re-read here, so granting or revoking a role reaches an active session
+        within one access-token lifetime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: A new token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: End this session
+      security: []
+      description: |
+        Revokes the presented refresh token's family — this device, not the others.
+        Deliberately answers 204 whether or not the token was valid: a caller trying to log
+        out should never be told their token was already dead, and probing here should
+        reveal nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204':
+          description: Session ended
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /auth/logout-all:
+    post:
+      operationId: logoutAllDevices
+      tags: [Auth]
+      summary: End every session for the current user
+      description: |
+        The lost-phone case. Revokes every refresh token this user holds, on every device.
+        Access tokens already issued stay valid until they expire — at most 15 minutes — so
+        this is a bound, not an instant cutoff.
+      responses:
+        '200':
+          description: How many sessions were ended
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionsEnded]
+                properties:
+                  sessionsEnded: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me:
+    get:
+      operationId: getCurrentUser
+      tags: [Auth]
+      summary: The authenticated user
+      description: |
+        What a client shell needs before it can render anything: who is signed in, which
+        church, and what they may do. Requires authentication but no permission — a user
+        can always read their own identity.
+      responses:
+        '200':
+          description: The current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1034,6 +1192,120 @@ components:
           type: object
           additionalProperties: true
           description: Module-specific settings, merged into the existing ones.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+        deviceLabel:
+          type: string
+          maxLength: 120
+          description: |
+            Shown in the user's session list so "log out that one" is a meaningful choice.
+            Client-supplied and therefore never trusted for anything but display.
+
+    MfaRequest:
+      type: object
+      required: [challenge, code]
+      properties:
+        challenge:
+          type: string
+          description: The challenge token returned by `login`.
+        code:
+          type: string
+          description: A six-digit TOTP code, or a recovery code.
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresInSeconds]
+      properties:
+        accessToken:
+          type: string
+          description: |
+            Bearer token for the API. Short-lived by design — revoking a role or a session
+            takes effect when this expires, so its lifetime is the worst-case delay.
+        refreshToken:
+          type: string
+          description: |
+            Single-use. Exchanging it returns a new one; presenting a spent one revokes the
+            whole family.
+
+            Carried in the body rather than an httpOnly cookie so that web, mobile and
+            kiosk clients all use one flow. Cookies would be marginally safer against XSS
+            on web alone, at the cost of CSRF handling and a second code path for the two
+            native clients.
+        expiresInSeconds:
+          type: integer
+          description: Lifetime of the access token, not the refresh token.
+
+    LoginResult:
+      oneOf:
+        - $ref: '#/components/schemas/LoginSuccess'
+        - $ref: '#/components/schemas/MfaChallenge'
+      discriminator:
+        propertyName: status
+        mapping:
+          success: '#/components/schemas/LoginSuccess'
+          mfa_required: '#/components/schemas/MfaChallenge'
+
+    LoginSuccess:
+      type: object
+      required: [status, tokens]
+      properties:
+        status: { type: string, enum: [success] }
+        tokens: { $ref: '#/components/schemas/TokenPair' }
+
+    MfaChallenge:
+      type: object
+      description: |
+        Credentials were right and a second factor is still owed. No token is issued yet —
+        the challenge is not a credential for anything but `/auth/mfa`.
+      required: [status, challenge, expiresInSeconds]
+      properties:
+        status: { type: string, enum: [mfa_required] }
+        challenge: { type: string }
+        expiresInSeconds: { type: integer }
+
+    CurrentUser:
+      type: object
+      required: [id, churchId, email, roles, permissions, mfaEnrolled, mfaRequired]
+      properties:
+        id: { type: string, format: uuid }
+        churchId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        campusId:
+          type: [string, 'null']
+          format: uuid
+          description: Set for a campus-scoped role; the campus their reach stops at.
+        roles:
+          type: array
+          items: { type: string }
+        permissions:
+          type: array
+          description: |
+            Expanded from the roles, so a client can hide what a user cannot do. A
+            convenience for rendering and never an authorization decision — the server
+            checks every request regardless, and a client that trusted this list would be
+            one tampered response away from showing someone else's data.
+          items: { type: string }
+        personId:
+          type: [string, 'null']
+          format: uuid
+          description: The person record this account represents, when one exists.
+        mfaEnrolled: { type: boolean }
+        mfaRequired:
+          type: boolean
+          description: |
+            Whether this user's roles oblige them to enrol. True and `mfaEnrolled` false
+            means the client should route them into enrolment.
 
   responses:
     BadRequest:

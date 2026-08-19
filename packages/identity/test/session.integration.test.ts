@@ -228,3 +228,136 @@ describe('logout', () => {
     expect((await sessions.refresh(login.tokens.refreshToken)).status).toBe('invalid');
   });
 });
+
+describe('roles in the access token', () => {
+  /** Grants a role, outside tenant context — the seeding path, not the request path. */
+  async function grant(userId: string, role: string, campusId?: string) {
+    const client = await pool.connect();
+    try {
+      await client.query(
+        'INSERT INTO user_role (church_id, user_id, role, campus_id) VALUES ($1, $2, $3, $4)',
+        [churchId, userId, role, campusId ?? null],
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  async function newCampus(): Promise<string> {
+    const client = await pool.connect();
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO campus (church_id, name) VALUES ($1, 'North') RETURNING id`,
+        [churchId],
+      );
+      return rows[0]!.id;
+    } finally {
+      client.release();
+    }
+  }
+
+  it('carries the roles the user actually holds', async () => {
+    // This array was hardcoded empty until CORE-019, so every permission-guarded route
+    // denied every real user — an authorization system that was correct and inert.
+    const { address, userId } = await newUser();
+    await grant(userId, 'STAFF');
+
+    const result = await sessions.login(address, PASSWORD);
+    if (result.status !== 'success') throw new Error(`login failed: ${result.status}`);
+    const claims = await verifyAccessToken(result.tokens.accessToken, keys);
+    expect(claims.roles).toEqual(['STAFF']);
+  });
+
+  it('carries the campus of a campus-scoped role', async () => {
+    // Without the campus the policy engine skips its narrowing check entirely, and a
+    // campus admin silently reaches the whole church.
+    const { address, userId } = await newUser();
+    const campusId = await newCampus();
+    await grant(userId, 'CAMPUS_ADMIN', campusId);
+
+    const result = await sessions.login(address, PASSWORD);
+    if (result.status !== 'success') throw new Error('login failed');
+    expect((await verifyAccessToken(result.tokens.accessToken, keys)).campus_id).toBe(campusId);
+  });
+
+  it('issues an empty set for a user with no roles, rather than failing', async () => {
+    const { address } = await newUser();
+    const result = await sessions.login(address, PASSWORD);
+    if (result.status !== 'success') throw new Error('login failed');
+    expect((await verifyAccessToken(result.tokens.accessToken, keys)).roles).toEqual([]);
+  });
+
+  it('picks up a role granted mid-session, on the next refresh', async () => {
+    // Roles are read at issue and at refresh rather than baked into the refresh token, so
+    // a grant takes effect within one access-token lifetime instead of lasting the session.
+    const { address, userId } = await newUser();
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'success') throw new Error('login failed');
+    expect((await verifyAccessToken(login.tokens.accessToken, keys)).roles).toEqual([]);
+
+    await grant(userId, 'PASTOR');
+
+    const refreshed = await sessions.refresh(login.tokens.refreshToken);
+    if (refreshed.status !== 'success') throw new Error('refresh failed');
+    expect((await verifyAccessToken(refreshed.tokens.accessToken, keys)).roles).toEqual(['PASTOR']);
+  });
+
+  it('drops a revoked role on the next refresh', async () => {
+    // The direction that matters: revocation must reach an active session promptly, or
+    // removing someone's access means waiting for them to log out.
+    const { address, userId } = await newUser();
+    await grant(userId, 'STAFF');
+    const login = await sessions.login(address, PASSWORD);
+    if (login.status !== 'success') throw new Error('login failed');
+
+    const client = await pool.connect();
+    try {
+      await client.query('DELETE FROM user_role WHERE user_id = $1', [userId]);
+    } finally {
+      client.release();
+    }
+
+    const refreshed = await sessions.refresh(login.tokens.refreshToken);
+    if (refreshed.status !== 'success') throw new Error('refresh failed');
+    expect((await verifyAccessToken(refreshed.tokens.accessToken, keys)).roles).toEqual([]);
+  });
+
+  it("cannot see another church's role rows", async () => {
+    // user_role is RLS-scoped and read inside the tenant transaction; a leak here would
+    // put another church's privileges into this church's token.
+    const { address, userId } = await newUser();
+    await grant(userId, 'STAFF');
+
+    const client = await pool.connect();
+    let otherChurch: string;
+    let otherUser: string;
+    try {
+      const church = await client.query<{ id: string }>(
+        `INSERT INTO church (name, country) VALUES ('role-iso', 'US') RETURNING id`,
+      );
+      otherChurch = church.rows[0]!.id;
+      const user = await client.query<{ id: string }>(
+        `INSERT INTO app_user (church_id, email) VALUES ($1, $2) RETURNING id`,
+        [otherChurch, email()],
+      );
+      otherUser = user.rows[0]!.id;
+      await client.query(
+        `INSERT INTO user_role (church_id, user_id, role) VALUES ($1, $2, 'CHURCH_ADMIN')`,
+        [otherChurch, otherUser],
+      );
+    } finally {
+      client.release();
+    }
+
+    const result = await sessions.login(address, PASSWORD);
+    if (result.status !== 'success') throw new Error('login failed');
+    expect((await verifyAccessToken(result.tokens.accessToken, keys)).roles).toEqual(['STAFF']);
+
+    const cleanup = await pool.connect();
+    try {
+      await cleanup.query('DELETE FROM church WHERE id = $1', [otherChurch]);
+    } finally {
+      cleanup.release();
+    }
+  });
+});
