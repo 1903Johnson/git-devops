@@ -186,12 +186,25 @@ export class MfaService {
       const result = verifyCode(fromBase32(secret), code, { notBefore: lastUsed });
 
       if (result.valid) {
-        await this.#db.transaction(async (tx) => {
-          await tx.query(
-            'UPDATE mfa_credential SET last_used_counter = $2, updated_at = now() WHERE id = $1',
-            [credential.id, result.counter ?? counterFor()],
-          );
-        });
+        // The counter was read in an earlier transaction, so `notBefore` above only says
+        // this code had not been spent *then*. A code stays valid for its whole 30-second
+        // step, which is long enough for someone who captured it to present it alongside
+        // its owner rather than after them — and an unconditional write would let both
+        // through, leaving single-use a property of the clock rather than of the code.
+        //
+        // The advance is therefore a compare-and-set: it only matches while the stored
+        // counter is still behind this one. Losing that race means the code was already
+        // spent, which is a replay however innocent it looks from here.
+        const counter = result.counter ?? counterFor();
+        const advanced = await this.#db.transaction(async (tx) =>
+          tx.query(
+            `UPDATE mfa_credential SET last_used_counter = $2, updated_at = now()
+              WHERE id = $1 AND (last_used_counter IS NULL OR last_used_counter < $2)
+              RETURNING id`,
+            [credential.id, counter],
+          ),
+        );
+        if ((advanced.rowCount ?? 0) === 0) return { status: 'invalid' };
         return { status: 'ok', method: 'totp' };
       }
 

@@ -242,7 +242,7 @@ Pass 1 reviewed `549567c` and returned three findings, all confirmed on inspecti
 |---|---|---|---|---|
 | REV-001 | SEC-002 | high | Refresh rotation consumed a token without a guard, so two concurrent presentations both succeeded and theft detection never fired | **fixed** |
 | REV-002 | SEC-001 | high | The campus rule is opt-in: it compares a resource's campus against the subject's, so listings (which have no single campus), creates (no id yet) and moves (a write to the destination) were unscoped, and a CAMPUS_ADMIN could read every person in the church | **fixed** |
-| REV-003 | SEC-003 | medium | TOTP counter is read outside the write transaction and advanced unconditionally, so one code can complete two concurrent logins | open |
+| REV-003 | SEC-003 | medium | TOTP counter is read outside the write transaction and advanced unconditionally, so one captured code completes two concurrent logins | **fixed** |
 
 **REV-002 left one thing open deliberately.** `family` and `family_member` carry no
 `campus_id`, so a household cannot be confined to a campus — and a family whose members
@@ -251,7 +251,19 @@ rather than fixing a defect, so the gap is documented in `packages/policy/README
 waits on a decision. Everything a campus admin reaches *through* a family is scoped: the
 people themselves are.
 
-Two things that pass is worth remembering for:
+Pass 2 reviewed `083a62e`, two merges behind, so two of its three findings were already
+fixed or in hand. Its third was new and is the most valuable finding either pass produced.
+
+| ID | From | Severity | What | Status |
+|---|---|---|---|---|
+| REV-004 | pass 2, SEC-001 | high | `mfaRequiredFor()` gates nothing. Login challenges only users already *enrolled*, so a privileged account that never enrolled signs in with a password alone — while `/me` truthfully reports `mfaRequired: true` to it | open |
+
+REV-004 is the one no test could have caught, because the tests assert the predicate
+rather than its enforcement: `mfaRequiredFor` is called in exactly two places, a unit test
+and a `/me` response field. CORE-015 is recorded above as shipping MFA "enforced for
+STAFF/PASTOR/ADMIN roles". It did not.
+
+Two things pass 1 is worth remembering for:
 
 - **Its reproductions were not executed** — the reviewing sandbox could not run the suites,
   so all three findings came from reading. They were right anyway, but an unexecuted
