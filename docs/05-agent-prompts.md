@@ -195,6 +195,145 @@ components.
 
 ---
 
+## CORE-016 — Church and campus services (`@church/church`)
+
+*Sprint 1 · Codex · **ready to start** — contract, schema, tenancy, and policy all exist*
+
+```text
+TICKET: CORE-016 — Church and campus services (@church/church)
+
+Goal
+The service layer behind the church and campus contract. Every later feature reaches
+churches and campuses through this package rather than writing its own SQL.
+
+Files you own
+  packages/church/**          (new workspace package: @church/church)
+
+Read first
+- packages/contracts/openapi/openapi.yaml — the shapes are already fixed. Import the
+  generated types from @church/contracts; do not redeclare Church, Campus, or the page
+  envelope.
+- packages/tenancy/README.md — how tenant context and the repository base work.
+- packages/policy/README.md — how authorization decisions are made.
+- packages/identity/src/service.ts — a worked example of this exact shape.
+
+Scope
+- ChurchService: get, update. CampusService: list (cursor paginated), get, create, update,
+  delete.
+- Extend TenantRepository from @church/tenancy for persistence. Do NOT write church_id
+  into a query by hand — the base class injects it, and a hand-written predicate is how
+  that guarantee quietly stops being true.
+- Every operation runs inside db.transaction() under runWithTenant. Never take a Pool and
+  query it directly.
+- Authorize with assertCan from @church/policy before acting: church:read / church:manage
+  for churches, campus:read / campus:manage for campuses. The caller supplies the Subject;
+  the service does not build one.
+- Cursor pagination on listCampuses, matching PageInfo in the contract. The cursor is
+  opaque to callers — encode it, do not hand back a raw id.
+- Map to the contract's camelCase shapes at the service boundary. The database is
+  snake_case; nothing outside this package should have to know that.
+
+Tests (all three categories are required)
+- test:unit — cursor encode/decode, and the row-to-contract mapping.
+- test:integration — each operation against a real PostgreSQL, using @church/testing.
+- test:isolation — assertTenantIsolation for every table you touch, plus a test that
+  Church A cannot read or modify Church B's campus by guessing its id.
+
+Definition of done
+- `pnpm run verify` clean from the repo root (it runs format:check as of #18).
+- The isolation suite passes: `pnpm --filter @church/church run test:isolation`.
+- `grep -rn "church_id" packages/church/src` shows no hand-written predicates in queries —
+  only the repository base and explicit mapping.
+
+Out of scope
+- HTTP routes and controllers. There is no apps/api yet; the ticket that adds it will wire
+  these services to the contract. Build the services so that wiring is trivial.
+```
+
+---
+
+## CORE-017 — People and families (`@church/people`)
+
+*Sprint 1 · Codex · **ready to start** — CORE-017a landed the contract and migration*
+
+```text
+TICKET: CORE-017 — People and families (@church/people)
+
+Goal
+The service layer for the platform's central record. A Person is the single source of
+truth; a User exists only when that person needs to log in (docs/01 §2.4.1).
+
+Files you own
+  packages/people/**          (new workspace package: @church/people)
+
+Read first
+- packages/contracts/openapi/openapi.yaml — the people and family shapes are fixed. Import
+  Person, PersonCreate, PersonUpdate, Family, FamilyMember, Milestone and the rest from
+  @church/contracts; do not redeclare them.
+- packages/migrations/sql/0005_people.sql — the tables you are mapping, and the reasoning
+  behind the ones that look odd.
+- packages/migrations/README.md — the four-part RLS recipe and the composite foreign-key
+  rule, if you add any table of your own.
+- packages/identity/src/service.ts — a worked example of this exact shape. If CORE-016
+  has landed, packages/church/** is the closer model; if it has not, do not wait for it —
+  the two tickets share no files.
+
+Scope
+- PersonService: list (cursor paginated, archived excluded by default), get, create,
+  update, archive.
+- FamilyService: list, get (with members), create, update, add member, remove member.
+- Membership lifecycle: changeStatus writes membership_status_history AND updates
+  person.status in ONE transaction. The history is append-only — never update or delete a
+  row in it. Churches track how someone became a member, not merely that they are one.
+- Milestones: list and record. Type comes from the contract's enum, which matches the
+  database CHECK constraint; a value in one and not the other is a 500 at runtime.
+- Same rules as CORE-016: TenantRepository, runWithTenant, assertCan, contract types from
+  @church/contracts, camelCase at the boundary.
+
+Particular care
+- Archive is not delete. `DELETE /people/{personId}` sets archived_at. Giving and
+  attendance history reference people, and a hard delete silently rewrites the past.
+- Children are Person records with no User (docs/01 §2.4.1). Nothing in this package may
+  assume a person has an account.
+- person:read_self must let a member read their own record and no one else's. There is a
+  policy rule for this; use assertCan rather than an if-statement.
+- A family relationship is NOT an authorisation. 'parent' on family_member does not mean
+  that person may collect a child — that is a separate GuardianAuthorisation owned by the
+  check-in module (docs/02 §5). Do not add a helper that conflates them, however
+  convenient; a custody order routinely leaves a parent on one list and off the other.
+- person.email is deliberately not unique. Do not add a uniqueness check in the service
+  either — a child's contact address is usually a parent's.
+- Do not accept churchId in a create or update body. It comes from the tenant context;
+  PersonCreate and FamilyCreate omit it on purpose.
+- Do not accept status in updatePerson. It moves only through changeStatus, so that every
+  change lands in the history with the user who made it.
+
+Tests (all three categories are required)
+- test:unit — cursor encode/decode, row-to-contract mapping, and that updatePerson rejects
+  a status field if one is passed.
+- test:integration — each operation against a real PostgreSQL, using @church/testing.
+  Include: changing status writes both the history row and person.status; archiving hides
+  the person from list but keeps them fetchable by id.
+- test:isolation — assertTenantIsolation for every table you touch. The composite foreign
+  keys already stop cross-tenant references at the database; do not remove or work around
+  them, and if a write fails with SQLSTATE 23503 the fix is the churchId you passed, not
+  the constraint.
+
+Definition of done
+- `pnpm run verify` clean from the repo root (it runs format:check as of #18).
+- The isolation suite passes: `pnpm --filter @church/people run test:isolation`.
+- Register every new test file in the package's test:isolation / test:integration scripts.
+  They name files explicitly, so an unregistered suite never runs in CI and the green tick
+  means nothing.
+- `grep -rn "church_id" packages/people/src` shows no hand-written predicates in queries.
+
+Out of scope
+- HTTP routes and controllers. There is no apps/api yet; the ticket that adds it will wire
+  these services to the contract. Build the services so that wiring is trivial.
+```
+
+---
+
 ## Writing new ticket prompts
 
 A ticket prompt that works has five parts. Miss one and the agent either stalls or
