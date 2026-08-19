@@ -16,7 +16,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test:unit": "pnpm -r --if-present run test:unit",
-    "verify": "pnpm run check:boundaries && pnpm run check:docs && pnpm run contracts:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
+    "verify": "pnpm run check:boundaries && pnpm run check:docs && pnpm run contracts:check && pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run test:unit",
     "contracts:generate": "pnpm --filter @church/contracts run generate",
     "contracts:check": "node scripts/check-contracts.mjs"
   },

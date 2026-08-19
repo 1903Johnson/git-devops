@@ -21,7 +21,9 @@ describe('error envelope', () => {
     // Stop at the first non-item line. Filtering the whole remainder instead would sweep up
     // every `- ` further down the file — `allOf` entries included — and did.
     const end = body.findIndex((line) => !line.trim().startsWith('- '));
-    const inSpec = body.slice(0, end === -1 ? body.length : end).map((line) => line.trim().slice(2));
+    const inSpec = body
+      .slice(0, end === -1 ? body.length : end)
+      .map((line) => line.trim().slice(2));
 
     expect(Object.keys(API_ERROR_CODES).sort()).toEqual([...inSpec].sort());
   });
