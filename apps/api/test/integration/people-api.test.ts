@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { APP_ROLE, ensureAppRole } from '@church/testing';
 import { CORE_MIGRATIONS_DIR, applyMigrations, collectMigrations } from '@church/migrations';
-import { createTestApp, tokenFor, type TestApp } from '../support/app.js';
+import { apiPath, createTestApp, tokenFor, type TestApp } from '../support/app.js';
 
 let harness: TestApp;
 const church = 'dede0000-0000-4000-8000-000000000001';
@@ -18,7 +18,7 @@ const call = async (
 ) => {
   const response = await harness.app.inject({
     method,
-    url,
+    url: apiPath(url),
     ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
     ...(body === undefined ? {} : { payload: body as object }),
   });

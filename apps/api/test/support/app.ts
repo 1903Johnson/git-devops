@@ -27,6 +27,11 @@ import { AuthService } from '../../src/auth/auth.service.js';
 import { ModulesController } from '../../src/module-admin/modules.controller.js';
 import { ModulesService } from '../../src/module-admin/modules.service.js';
 import type { ApiConfig } from '../../src/config.js';
+import { API_PREFIX, apiPath } from '../../src/api-prefix.js';
+
+// Re-exported so tests write contract paths and reach the prefixed routes the server
+// really serves, rather than quietly exercising a path shape no client can use.
+export { apiPath };
 
 export const TEST_KEYS: KeyRing = {
   active: { kid: 'test-1', secret: new Uint8Array(32).fill(7) },
@@ -156,6 +161,10 @@ export async function createTestApp(): Promise<TestApp> {
     // the cause out of the response body.
     ...(process.env.TEST_LOGS ? {} : { logger: false as const }),
   });
+  // The same prefix bootstrap() applies. The harness cannot call bootstrap() itself — it
+  // needs the testing module's provider overrides — so this is the one duplicated line,
+  // and it reads from the one shared constant rather than restating the value.
+  app.setGlobalPrefix(API_PREFIX);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 
@@ -181,7 +190,7 @@ export async function get(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const response = await app.inject({
     method: 'GET',
-    url,
+    url: apiPath(url),
     ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
   });
   return { status: response.statusCode, body: JSON.parse(response.body || '{}') };

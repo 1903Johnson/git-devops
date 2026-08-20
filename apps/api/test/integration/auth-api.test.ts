@@ -14,7 +14,7 @@ import {
   fromBase32,
   generateCode,
 } from '@church/identity';
-import { createTestApp, TEST_KEYS, type TestApp } from '../support/app.js';
+import { apiPath, createTestApp, TEST_KEYS, type TestApp } from '../support/app.js';
 
 let harness: TestApp;
 const church = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -23,7 +23,7 @@ const PASSWORD = 'correct horse battery staple';
 const post = async (url: string, body: unknown, token?: string) => {
   const response = await harness.app.inject({
     method: 'POST',
-    url,
+    url: apiPath(url),
     payload: body as object,
     ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
   });
@@ -37,7 +37,7 @@ const post = async (url: string, body: unknown, token?: string) => {
 const get = async (url: string, token?: string) => {
   const response = await harness.app.inject({
     method: 'GET',
-    url,
+    url: apiPath(url),
     ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
   });
   return { status: response.statusCode, body: JSON.parse(response.body || '{}') };
