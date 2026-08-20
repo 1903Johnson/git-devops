@@ -1,0 +1,36 @@
+{
+  "name": "@church/admin-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "eslint app lib components",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run test"
+  },
+  "dependencies": {
+    "@church/contracts": "workspace:*",
+    "@church/sdk": "workspace:*",
+    "@church/ui": "workspace:*",
+    "@church/ui-tokens": "workspace:*",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@testing-library/user-event": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "eslint-config-next": "catalog:",
+    "jsdom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
