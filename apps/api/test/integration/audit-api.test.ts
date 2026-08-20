@@ -6,7 +6,7 @@ import { APP_ROLE, ensureAppRole } from '@church/testing';
 import { CORE_MIGRATIONS_DIR, applyMigrations, collectMigrations } from '@church/migrations';
 import { loadModules, syncModuleDefinitions } from '@church/module-kit';
 import { IdentityService, counterFor, fromBase32, generateCode } from '@church/identity';
-import { createTestApp, tokenFor, type TestApp } from '../support/app.js';
+import { apiPath, createTestApp, tokenFor, type TestApp } from '../support/app.js';
 
 const FIXTURES = new URL('../../../../packages/module-kit/test/fixtures/', import.meta.url)
   .pathname;
@@ -18,7 +18,7 @@ let adminId = '';
 const request = async (method: 'GET' | 'POST', url: string, token?: string, body?: unknown) => {
   const response = await harness.app.inject({
     method,
-    url,
+    url: apiPath(url),
     ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
     ...(body === undefined ? {} : { payload: body as object }),
   });

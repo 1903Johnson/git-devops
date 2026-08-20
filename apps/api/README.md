@@ -103,6 +103,28 @@ Three rules:
   naming a church is for routing and validation, never for scoping — there is a test
   asserting a query string cannot override it.
 
+## Paths, and the absence of CORS
+
+Every route is served under **`/api/v1`**, set once in `src/api-prefix.ts` and applied by
+both `bootstrap()` and the test harness. That value is not a preference: the contract
+declares `servers: [{ url: /api/v1 }]`, and in this repo the contract is what code conforms
+to rather than the other way round. Changing it means changing the contract in the same
+commit.
+
+It was wrong until CORE-018a. The server answered on `/auth/login` while the contract
+promised `/api/v1/auth/login`, so any client built from the SDK would have 404'd on every
+request — and nothing caught it, because `bootstrap()` is exercised by no test and every
+integration test injected a literal unprefixed path. `test/integration/contract-paths.test.ts`
+now reads the prefix out of the spec and asserts the server answers there and *only* there.
+
+**There is no CORS configuration here, and that is deliberate.** The admin web app reaches
+this API from its own server, not from the browser: tokens live in httpOnly cookies the
+browser cannot read, so an XSS in the UI cannot lift a refresh token. Adding
+`app.enableCors()` to "make the frontend work" would mean the browser is now calling this
+API directly, which is a different security model reached by accident. If a genuine
+cross-origin client ever needs to exist, that is a decision with an ADR behind it, not a
+one-line fix.
+
 ## Why SWC here and esbuild everywhere else
 
 Nest resolves constructor injection from `design:paramtypes` metadata, which only a

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { APP_ROLE, ensureAppRole } from '@church/testing';
 import { CORE_MIGRATIONS_DIR, applyMigrations, collectMigrations } from '@church/migrations';
 import { loadModules, syncModuleDefinitions } from '@church/module-kit';
-import { createTestApp, tokenFor, type TestApp } from '../support/app.js';
+import { apiPath, createTestApp, tokenFor, type TestApp } from '../support/app.js';
 
 const FIXTURES = new URL('../../../../packages/module-kit/test/fixtures/', import.meta.url)
   .pathname;
@@ -20,7 +20,7 @@ const request = async (
 ): Promise<{ status: number; body: Record<string, unknown> }> => {
   const response = await harness.app.inject({
     method,
-    url,
+    url: apiPath(url),
     headers: { authorization: `Bearer ${token}` },
     ...(body === undefined ? {} : { payload: body as object }),
   });
