@@ -2,6 +2,11 @@
 
 Everything the platform depends on, on the same versions CI uses.
 
+Local development runs against Docker, not against a hosted database — the versions here
+match CI exactly, the suites create roles and delete rows between tests, and 269 integration
+tests over a network link is a different experience entirely. For deploying against a hosted
+Postgres, see [deployment-supabase.md](deployment-supabase.md).
+
 ## Prerequisites
 
 - Docker Engine with the Compose plugin (`docker compose version` ≥ 2)
