@@ -81,6 +81,12 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
+      # apps/admin-web consumes @church/ui and @church/ui-tokens as *types*, and both
+      # resolve through dist. Nothing else in the workspace does — packages/ui reaches
+      # ui-tokens through CSS variables rather than code — so this step exists only from
+      # the moment a real client appeared, and typecheck fails without it on a fresh
+      # checkout. `pnpm run verify` runs the same step for the same reason.
+      - run: pnpm run build:libs
       - run: pnpm run lint
       - run: pnpm run format:check
       - run: pnpm -r --if-present run typecheck
