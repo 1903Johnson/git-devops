@@ -40,6 +40,35 @@ built for.
 The branch is chosen by the route handler and obeyed by the form. The client is never told
 which credential it holds, and never has to inspect one to work out what happened.
 
+## Routing denies by default
+
+`middleware.ts` lets through an explicit list of entry points and redirects everything
+else. Written this way round deliberately: a middleware that enumerates *protected* routes
+silently exposes every page added after it, and the page added after it is always the
+interesting one. There is a test that adds two routes which do not exist and asserts they
+are still protected.
+
+It is a convenience, not a control. It checks that a cookie is present — it cannot verify
+the token, because the signing keys live on the API — so every route underneath still
+authenticates for real, server-side. Its job is to send a signed-out user to the login
+screen rather than to a page that will fail.
+
+Either cookie is enough to let a request through. An expired access token alongside a live
+refresh token is the ordinary state fifteen minutes into any session; redirecting on the
+access cookie alone would sign everyone out on the quarter hour, and it would look like a
+token bug rather than a routing one.
+
+## Navigation is a stub, on purpose
+
+`components/nav.tsx` lists the core sections every tenant has. WEB-020 replaces the
+*source* with `GET /me/modules`, which does not exist yet (CORE-025) — so the renderer
+already takes a list and knows nothing about where it came from. A test renders it with a
+made-up module to hold that seam open.
+
+Optional modules are absent rather than hardcoded and greyed out. A nav listing a module a
+church has not enabled teaches people to click things that 404, and the module system's
+whole point is that an absent module is absent.
+
 ## Recovery codes
 
 `/login/enrol` ends by displaying them, and the Continue button stays disabled until the
